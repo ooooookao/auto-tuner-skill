@@ -1,0 +1,29 @@
+{
+  "skill_name": "auto-tuner",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "帮我调参，项目在 E:/project/segmentation/ 下，数据在 D:/datasets/cardiac_ct/，目标是心脏分割 dice >= 0.9",
+      "expected_output": "Agent 应该：1) 先确认工作区 E:/project/segmentation/；2) 列出目录内容让用户确认；3) 发现数据在外部目录 D:/datasets/cardiac_ct/，询问是否一并配置权限；4) 通过 update-config 配置两个目录的完整权限；5) 确认权限配置完成后再进入阶段一",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "我有一个点云体素化的项目，代码在 /project/voxelization/ 下，用 PyTorch 写的。现在跑出来的 dice 只有 0.75 左右，我需要所有心脏部位（左心室、右心室、心肌）的 dice 都 >= 0.9。帮我调参，代码能跑通，就是效果不好。显卡是 RTX 3090 24GB。",
+      "expected_output": "Agent 应该：1) 先读代码理解项目结构；2) 进行头脑风暴列出调参策略；3) 列出可调参数和建议范围；4) 定义达标标准；5) 设计并行调参方案；6) 开始第一轮调参并记录结果",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "我在做一个图像去噪的任务，用的是一个简单的 U-Net。目前 PSNR 只有 25dB，我想达到 30dB 以上。代码是 train.py，配置在 config.yaml 里。我有两块 RTX 4090，帮我自动化调参。",
+      "expected_output": "Agent 应该：1) 读取 train.py 和 config.yaml；2) 识别出 config.yaml 中的可调参数；3) 设计调参方案（利用双 GPU）；4) 用不同参数并行跑实验；5) 迭代优化直到 PSNR >= 30",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "我有一个传统机器学习项目，用 scikit-learn 做分类。数据是 CSV 格式的表格数据，目标是分 5 类。现在 accuracy 只有 0.65，老板要求至少 0.85。代码在 ml_pipeline.py 里，帮我搞定。",
+      "expected_output": "Agent 应该：1) 读代码理解 pipeline；2) 识别可调参数（模型选择、超参、特征工程参数等）；3) 设计调参策略（可能用 grid search 或 random search）；4) 并行跑多组实验；5) 迭代优化到 accuracy >= 0.85",
+      "files": []
+    }
+  ]
+}
