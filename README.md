@@ -109,6 +109,10 @@ git clone https://github.com/ooooookao/auto-tuner-skill.git ~/.claude/skills/aut
 - **死循环检测**：参考 ml-intern 的 Doom Loop Detector，检测调参过程中参数组合过于相似的情况并强制跳出
 - **研究子 Agent**：参考 ml-intern 的 Research Sub-agent 模式，用独立上下文做 GitHub 搜索，避免撑爆主 agent 的 context
 - **结构化研究输出**：参考 ml-intern 的研究输出格式，架构方案评估采用结构化表格
+- **上下文压缩**：参考 ml-intern 的 Context Compaction，长调参流程中定期压缩旧轮次信息
+- **完成守卫**：参考 ml-intern 的 Continuation Guard，确保 agent 不会中途放弃未完成的调参任务
+- **通知机制**：参考 ml-intern 的 Notification Gateway，调参完成时通知用户
+- **成本追踪**：参考 ml-intern 的 Telemetry 系统，在报告中记录 token 消耗和费用
 
 ## License
 
