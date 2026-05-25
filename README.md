@@ -102,6 +102,14 @@ git clone https://github.com/ooooookao/auto-tuner-skill.git ~/.claude/skills/aut
 - Claude Code 环境
 - `update-config` skill（用于配置工作区权限）
 
+## 致谢
+
+本 skill 的部分设计思路借鉴了 [huggingface/ml-intern](https://github.com/huggingface/ml-intern)：
+
+- **死循环检测**：参考 ml-intern 的 Doom Loop Detector，检测调参过程中参数组合过于相似的情况并强制跳出
+- **研究子 Agent**：参考 ml-intern 的 Research Sub-agent 模式，用独立上下文做 GitHub 搜索，避免撑爆主 agent 的 context
+- **结构化研究输出**：参考 ml-intern 的研究输出格式，架构方案评估采用结构化表格
+
 ## License
 
 MIT
