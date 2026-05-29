@@ -12,10 +12,11 @@
 - [ ] 1.2 数据集检查：全面检查并记录到 dataset_info.md
 - [ ] 1.3 跑 baseline：估算单轮耗时
 - [ ] 1.4 询问用户：子集 vs 全量（10 分钟超时后默认全量）
-- [ ] 1.5 自我辩论：选调参策略，记录到 decision_log.md
-- [ ] 1.6 参数扫描：识别可调参数，按类别整理
-- [ ] 1.7 达标定义：提取或推断达标标准
-- [ ] 1.8 大纲自审：审查规划合理性（见 `references/review-checklist.md`）
+- [ ] 1.5 读取经验库：查找同类项目的历史经验（见 `references/experience.md`）
+- [ ] 1.6 自我辩论：选调参策略（参考历史经验），记录到 decision_log.md
+- [ ] 1.7 参数扫描：识别可调参数，按类别整理（参考经验库中的参数范围）
+- [ ] 1.8 达标定义：提取或推断达标标准
+- [ ] 1.9 大纲自审：审查规划合理性（见 `references/review-checklist.md`）
 
 ---
 
@@ -114,6 +115,25 @@ Step 1 专属故障：
 |------|------|
 | 数据集路径错误 | 检查路径是否存在，不存在则在 dataset_info.md 中记录 |
 | 数据集损坏 | 记录损坏文件，排除后继续 |
+| 代码有 bug 跑不通 | 自动修复流程（见下） |
+
+### 自动代码修复流程
+
+baseline 跑不通时，不等用户，自动修复：
+
+1. **读错误日志**：提取最后 20 行错误信息
+2. **定位问题**：根据错误类型判断：
+   - `ModuleNotFoundError` → 缺依赖，自动 `pip install`
+   - `FileNotFoundError` → 路径问题，自动修正路径
+   - `CUDA out of memory` → 自动降低 batch_size
+   - `SyntaxError` / `IndentationError` → 自动修正语法
+   - `TypeError` / `ValueError` → 读相关代码，分析参数类型
+   - 其他 → 读相关代码文件，尝试理解并修复
+3. **修复代码**：用 Edit 工具修改
+4. **验证修复**：重新运行 baseline
+5. **记录修复**：将 bug 和修复方案写入 `experiment/decision_log.md`
+
+最多自动修复 3 次。3 次仍失败 → 记录所有尝试过的修复，标记为"需用户介入"。
 
 通用故障规则见 `references/failure-recovery.md`。
 
