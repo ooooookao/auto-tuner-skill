@@ -1,6 +1,6 @@
-# GitHub 搜索策略
+# 方案搜索策略
 
-本文档定义架构回溯时在 GitHub 搜索解决方案的策略。
+本文档定义架构回溯时搜索解决方案的策略。
 
 ---
 
@@ -10,9 +10,26 @@
 
 ---
 
+## 搜索范围
+
+不限于单一平台，哪里有有用信息就去哪里搜：
+
+| 来源 | 适用场景 | 搜索工具 |
+|------|----------|----------|
+| GitHub | 找实现代码、开源项目 | `WebSearch`、`WebFetch` |
+| 论文（arXiv/Scholar） | 找方法论、SOTA 结果 | `WebSearch` |
+| 框架官方文档 | 找 API 用法、最佳实践 | `WebFetch` |
+| HF Hub | 找预训练模型、数据集、Spaces | `WebFetch` |
+| 技术博客/论坛 | 找实战经验、踩坑记录 | `WebSearch` |
+| Stack Overflow | 找具体问题的解决方案 | `WebSearch` |
+
+优先级：GitHub 实现 > 论文方法 > 文档最佳实践 > 博客经验。
+
+---
+
 ## 搜索方式
 
-spawn 一个研究子 agent（独立上下文，不污染主 agent context），让子 agent 执行搜索并返回结构化结果。
+spawn 一个研究子 agent（独立上下文，不污染主 agent context），让子 agent 执行多源搜索并返回结构化结果。
 
 ---
 
@@ -33,19 +50,18 @@ spawn 一个研究子 agent（独立上下文，不污染主 agent context），
 - `task_type`：用户项目的任务类型（如 "medical image segmentation"、"point cloud classification"）
 - `framework`：使用的框架（如 "pytorch"、"tensorflow"）
 
+子 agent 应根据搜索结果质量动态调整关键词——如果第一轮搜不到好结果，换同义词或更宽泛的词重试。
+
 ---
 
-## 搜索范围
+## 结果筛选标准
 
-优先搜索：
-1. 高星标的 GitHub 仓库（> 100 stars）
-2. 知名框架的官方示例（trl, transformers, detectron2, mmsegmentation 等）
-3. 对应任务的 SOTA 实现
-
-排除：
-- 个人实验性仓库（< 10 stars）
-- 过时的实现（最后更新 > 2 年）
-- 与当前框架不兼容的代码
+| 来源 | 筛选标准 |
+|------|----------|
+| GitHub | 星标 > 100、最后更新 < 2 年、与当前框架兼容 |
+| 论文 | 引用量高、近期发表、有实验结果 |
+| 文档 | 官方文档、对应当前版本 |
+| 博客/论坛 | 有代码示例、有实际效果验证 |
 
 ---
 
