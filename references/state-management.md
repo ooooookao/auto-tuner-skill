@@ -101,7 +101,7 @@
 |------|------|
 | checkpoint 缺失 | 从最近的 delta 重建 |
 | delta 缺失 | 从 checkpoint 开始，缺失的步骤重做 |
-| 代码被修改 | 提示用户确认，可能需要重新开始 |
+| 代码被修改 | 从 checkpoint 重新复制，不保留外部修改 |
 | 数据集变化 | 重新跑 baseline，更新 dataset_info.md |
 
 ---
