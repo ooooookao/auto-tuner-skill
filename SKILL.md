@@ -5,6 +5,7 @@ description: >
   当用户提到"调参"、"超参搜索"、"hyperparameter tuning"、"参数优化"、"跑实验"、"达标"、"dice"、"accuracy"、"loss"等关键词时触发。
   也适用于用户描述了一个实验目标（如"所有心脏部位 dice >= 0.9"）并希望 agent 自动迭代调参直到达标的情况。
   即使用户没有明确说"调参"，只要他们描述了一个需要反复实验才能达到指标的科研任务，也应触发此 skill。
+  英文触发："tune hyperparameters"、"train model"、"run experiments"、"optimize parameters"、"reach target metrics"。
 ---
 
 # 科研代码自动化调参
@@ -23,21 +24,25 @@ Step 1 → steps/step1-planning.md
   ✓ 理解项目  ✓ 数据集记录  ✓ baseline 耗时  ✓ 自我辩论选策略  ✓ 参数扫描  ✓ 达标定义
   ✓ 大纲自审（审查前置）
 
-Step 2 → steps/step2-tuning.md
-  ✓ 环境准备  ✓ 并行执行  ✓ results.json  ✓ progress.md  ✓ 上下文压缩
+Step 2 → steps/step2-tuning.md          ← 调参主循环
+  ✓ 并行执行  ✓ 趋势分析  ✓ 参数重要性  ✓ 死循环检测  ✓ 递进策略
+  ✓ 审查触发  ✓ 终止/路由判断  ✓ 上下文压缩
 
-Step 3 → steps/step3-optimization.md
-  ✓ 趋势分析  ✓ 死循环检测  ✓ 架构回溯（条件触发）  ✓ 放弃判定
+Step 3 → steps/step3-optimization.md    ← 仅架构回溯时触发
+  ✓ 存档  ✓ 诊断瓶颈  ✓ 多源搜索  ✓ 架构修改  ✓ 验证与回档
 
 Step 4 → steps/step4-report.md
-  ✓ 按模板生成报告  ✓ 架构变更历史（如有）  ✓ 成本记录
+  ✓ 按模板生成报告  ✓ 架构变更历史（如有）  ✓ 成本记录  ✓ 写入经验库
 ```
+
+**循环结构**：Step 2 是主循环（执行→分析→决策→下一轮），Step 3 仅在架构回溯时从 Step 2 跳入，完成后回到 Step 2。
 
 每步执行时读取对应 step 文件。其他文件按需读取：
 - 故障 → `references/failure-recovery.md`
 - 审查 → `references/review-checklist.md`
 - 状态管理 → `references/state-management.md`
 - 用户决策 → `references/user-choices.md`
+- 经验 → `references/experience.md`
 
 ---
 
@@ -51,41 +56,17 @@ Step 4 → steps/step4-report.md
 
 ---
 
-## 故障熔断总则
+## 故障熔断
 
-详细规则见 `references/failure-recovery.md`。核心要点：
+子 agent 失败重试 3 次→降级→记录；质量不达标自动换策略/放宽标准/停止。详见 `references/failure-recovery.md`。
 
-- **子 agent 调用失败**：重试 3 次（间隔 0s/5s/15s）→ 主 agent 降级执行 → 结果仍走正常校验
-- **质量熔断**：同一环节 3 次不达标 → 自动换策略/放宽标准/停止（见 `references/failure-recovery.md`）
-- **降级事件**：记录到 `experiment/degradation_log.md`
+## 审查机制
 
----
-
-## 审查前置总则
-
-详细清单见 `references/review-checklist.md`。核心要点：
-
-- **大纲自审**：参数规划完成后、开始调参前，先自审规划是否合理
-- **两轮审查**：粗调只报严重问题（结构性硬伤），细调报所有问题（细节精修）
-- 两轮用同一套维度，但通过标准不同
-
----
-
-## 触发条件
-
-- **语义边界触发**：每个搜索阶段（粗搜/细搜/微调）完成时审查，而非固定轮数
-- **兜底机制**：超过 15 轮未审查时强制触发一次
-- **架构回溯触发**：连续 10 轮无提升（< 0.01）且距达标 > 0.03
-
----
+大纲自审（调参前）+ 语义边界审查（每个搜索阶段完成时）+ 兜底 15 轮强制触发。粗调报硬伤，细调报所有问题。详见 `references/review-checklist.md`。
 
 ## 状态管理
 
-详细规则见 `references/state-management.md`。核心要点：
-
-- 每步产出增量记录：`experiment/delta-step{N}.md`
-- 每个搜索阶段结束写全量快照：`experiment/checkpoint-phase{N}.md`
-- 断点恢复：读最近 checkpoint + 之后的 deltas
+每步写 delta，阶段切换写 checkpoint，断点恢复读 checkpoint + deltas。详见 `references/state-management.md`。
 
 ---
 
@@ -96,10 +77,10 @@ Step 4 → steps/step4-report.md
 | `experiment/dataset_info.md` | 数据集分析记录 |
 | `experiment/decision_log.md` | 每轮决策日志 |
 | `experiment/progress.md` | 实时进度（用户可查看） |
-| `experiment/results.json` | 每轮参数与指标汇总（格式见 `references/results_schema.md`） |
+| `experiment/results.json` | 每轮参数与指标汇总（格式见 `references/results-schema.md`） |
 | `experiment/failed_architectures.md` | 架构修改失败记录 |
 | `experiment/degradation_log.md` | 降级事件记录 |
 | `experiment/delta-step{N}.md` | 每步增量记录 |
 | `experiment/checkpoint-phase{N}.md` | 阶段快照 |
 | `experiment/checkpoints/` | 架构变更前的代码存档 |
-| `experiment/report.md` | 最终报告（模板见 `references/report_template.md`） |
+| `experiment/report.md` | 最终报告（模板见 `references/report-template.md`） |

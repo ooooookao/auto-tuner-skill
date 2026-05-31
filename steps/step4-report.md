@@ -1,3 +1,8 @@
+---
+step: 4
+title: 未知步骤
+---
+
 # Step 4：达标报告
 
 **目的**：生成最终报告，记录全部调参历程。
@@ -9,7 +14,7 @@
 ## 操作清单
 
 - [ ] 4.1 收集所有轮次结果
-- [ ] 4.2 读取 `references/report_template.md` 按模板生成报告
+- [ ] 4.2 读取 `references/report-template.md` 按模板生成报告
 - [ ] 4.3 包含架构变更历史（如有）
 - [ ] 4.4 包含失败方案汇总（如有）
 - [ ] 4.5 记录成本（token 消耗和费用）
@@ -20,7 +25,7 @@
 
 ## 报告内容
 
-按 `references/report_template.md` 模板，必须包含：
+按 `references/report-template.md` 模板，必须包含：
 
 1. **项目概况**：名称、目标、达标标准、总耗时、总轮数
 2. **最佳配置**：参数表

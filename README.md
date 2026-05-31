@@ -55,28 +55,30 @@ auto-tuner/
 │   ├── review-checklist.md               ← 审查维度 + 两轮制（审查时读）
 │   ├── state-management.md               ← 增量/快照/断点恢复（状态管理时读）
 │   ├── user-choices.md                   ← 用户选择策略（Step 1 数据集选择时读）
-│   ├── report_template.md                ← 报告模板（生成报告时读）
-│   └── results_schema.md                 ← results.json 格式（写结果时读）
+│   ├── report-template.md                ← 报告模板（生成报告时读）
+│   └── results-schema.md                 ← results.json 格式（写结果时读）
 ├── evals/
 │   └── evals.json
+├── examples/
+│   └── cardiac-segmentation-example.md   ← 完整调参示例
 └── README.md
 ```
 
 ### 设计原则
 
-**模块化分层**：SKILL.md 只放全局规则和工作流导航（~115 行），详细内容按需读取 step 文件。如果一段内容不是每次执行都需要，就不放在 SKILL.md 里。
+**模块化分层**：SKILL.md 只放全局规则和工作流导航（~80 行），详细内容按需读取 step 文件。
 
-**工作流内联 checklist**：SKILL.md 的工作流图中每步标注 ✓ 最低要求，即使 agent 不读 step 文件也不会跑偏。
+**调参主循环**：Step 2 是主控循环（执行→分析→决策→下一轮），Step 3 仅在架构回溯时从 Step 2 跳入。
+
+**工作流内联 checklist**：每个 step 文件顶部有 ✓ 操作清单，agent 不读完整文件也能知道要做什么。
 
 **故障熔断**：子 agent 调用失败重试 3 次→降级执行→记录；质量不达标自动降级处理。
 
-**审查前置 + 两轮制**：大纲自审在调参前发现问题；粗调报硬伤，细调报细节。
-
-**语义边界触发**：每个搜索阶段完成时审查，兜底 15 轮强制触发。
+**审查前置 + 语义边界**：大纲自审在调参前发现问题；每个搜索阶段完成时审查，兜底 15 轮强制触发。
 
 **全程自主**：用户只在 Step 0 确认工作区 + Step 1 选择数据集策略，之后所有决策由 agent 自主完成。
 
-**状态增量**：每步写 delta，阶段切换写 checkpoint，断点恢复读 checkpoint + deltas。
+**经验积累**：每次调参结束后提取关键经验写入经验库，跨项目复用。
 
 ## 生成的文件
 

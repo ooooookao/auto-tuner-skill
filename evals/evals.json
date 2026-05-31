@@ -24,6 +24,36 @@
       "prompt": "我有一个传统机器学习项目，用 scikit-learn 做分类。数据是 CSV 格式的表格数据，目标是分 5 类。现在 accuracy 只有 0.65，老板要求至少 0.85。代码在 ml_pipeline.py 里，帮我搞定。",
       "expected_output": "Agent 应该：1) 读代码理解 pipeline；2) 识别可调参数（模型选择、超参、特征工程参数等）；3) 设计调参策略（可能用 grid search 或 random search）；4) 并行跑多组实验；5) 迭代优化到 accuracy >= 0.85",
       "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "调参跑到第 8 轮了，dice 一直卡在 0.85 不动，连续 5 轮没有提升。目标是 0.92。项目是医学图像分割，用的 nnUNet。",
+      "expected_output": "Agent 应该：1) 检测到连续多轮无提升，触发架构回溯条件；2) 存档当前最优代码；3) 分析 loss 曲线诊断瓶颈；4) spawn 子 agent 搜索同类任务的解决方案；5) 自我辩论选最优方案；6) 执行架构修改后回到调参循环",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "我的项目已经调了 40 多轮了，三种架构都试过了，最好的 dice 只有 0.82，目标是 0.95。感觉达不到了，但是 agent 一直不停怎么办？",
+      "expected_output": "Agent 应该：1) 检查放弃条件（架构穷尽、总轮数上限、长期停滞）；2) 如果满足条件，自动停止并生成放弃报告；3) 报告中说明已尝试方案、各方案最佳指标、放弃原因分析",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "训练跑着跑着 OOM 了，RTX 3090 24GB 的显存不够用。batch_size 已经设成 4 了，再小就没法训了。",
+      "expected_output": "Agent 应该：1) 检测到 OOM 错误；2) 自动降低 batch_size 50% 重试；3) 如果仍 OOM，考虑减小模型或使用梯度累积；4) 如果并行路数过多，减少并行数；5) 记录到 decision_log.md",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "帮我调参，train.py 跑不起来，报 ModuleNotFoundError: No module named 'monai'",
+      "expected_output": "Agent 应该：1) 识别 ModuleNotFoundError；2) 自动 pip install monai；3) 重新运行 baseline；4) 如果还有其他缺失依赖，继续安装；5) 记录修复过程到 decision_log.md；6) 最多自动修复 3 次",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "项目在 /project/ 下，已经跑了几轮调参了，experiment/ 目录里有之前的结果。我想继续调，上次是因为网络断了中断的。",
+      "expected_output": "Agent 应该：1) 读取最近的 checkpoint-phase{N}.md；2) 读取 checkpoint 之后的所有 delta-step{N}.md；3) 合并状态确定当前进度；4) 从断点继续执行调参循环",
+      "files": []
     }
   ]
 }
