@@ -69,7 +69,7 @@ experience/
 | 内容 | 来源 | 价值 |
 |------|------|------|
 | 最佳参数范围 | results.json 最佳配置 | 直接复用 |
-| 参数重要性 | step3 分析结果 | 缩小搜索范围 |
+| 参数重要性 | step2 分析结果 | 缩小搜索范围 |
 | 架构修改经验 | failed_architectures.md | 避免重复踩坑 |
 | 调参策略效果 | decision_log.md | 选更好的策略 |
 | 数据集特征影响 | dataset_info.md | 匹配相似数据集 |

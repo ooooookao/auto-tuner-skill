@@ -5,7 +5,7 @@ description: >
   当用户提到"调参"、"超参搜索"、"hyperparameter tuning"、"参数优化"、"跑实验"、"达标"、"dice"、"accuracy"、"loss"等关键词时触发。
   也适用于用户描述了一个实验目标（如"所有心脏部位 dice >= 0.9"）并希望 agent 自动迭代调参直到达标的情况。
   即使用户没有明确说"调参"，只要他们描述了一个需要反复实验才能达到指标的科研任务，也应触发此 skill。
-  英文触发："tune hyperparameters"、"train model"、"run experiments"、"optimize parameters"、"reach target metrics"。
+  英文触发："tune hyperparameters"、"train model"、"run experiments"、"optimize parameters"、"reach target metrics"、"fine-tune"、"grid search"、"cross-validation"、"sweep"、"hyperparameter search"。
 ---
 
 # 科研代码自动化调参
@@ -43,6 +43,7 @@ Step 4 → steps/step4-report.md
 - 状态管理 → `references/state-management.md`
 - 用户决策 → `references/user-choices.md`
 - 经验 → `references/experience.md`
+- 配置生成 → `references/config-generation.md`（框架识别 + 配置文件生成 + Optuna 集成）
 
 ---
 
@@ -88,3 +89,4 @@ Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是
 | `experiment/checkpoint-phase{N}.md` | 阶段快照 |
 | `experiment/checkpoints/` | 架构变更前的代码存档 |
 | `experiment/report.md` | 最终报告（模板见 `references/report-template.md`） |
+| `experiment/report.html` | 可视化 HTML 报告（含图表，无依赖时为纯表格） |

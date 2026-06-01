@@ -51,9 +51,35 @@ title: 达标报告
 
 ---
 
+## 可视化 HTML 报告
+
+在生成 `experiment/report.md` 的同时，生成 `experiment/report.html` 可视化报告。
+
+**依赖检查**：先检查用户环境是否有 matplotlib 或 plotly：
+```bash
+python -c "import matplotlib" 2>/dev/null && echo "matplotlib OK" || echo "no matplotlib"
+python -c "import plotly" 2>/dev/null && echo "plotly OK" || echo "no plotly"
+```
+
+**有 matplotlib/plotly** → 生成完整可视化报告：
+- 参数重要性柱状图
+- 每轮最佳指标趋势图
+- 参数-指标散点矩阵
+- 对比表（HTML 表格）
+
+**无依赖** → 生成纯 HTML 表格报告：
+- 最佳配置表
+- 每轮指标对比表
+- 参数敏感性表
+- 内联 CSS 样式，无需外部依赖
+
+HTML 报告的数据来源与 report.md 完全相同（results.json + decision_log.md）。
+
+---
+
 ## 通知
 
 报告生成后，通过 Claude Code 通知机制告知用户：
-- 报告路径：`experiment/report.md`
+- 报告路径：`experiment/report.md` + `experiment/report.html`
 - 关键指标摘要：最佳指标 vs 目标值
 - 是否达标

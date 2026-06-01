@@ -54,6 +54,7 @@ auto-tuner/
 │   ├── experience.md                     ← 经验迁移系统（Step 1 读，Step 4 写）
 │   ├── review-checklist.md               ← 审查维度 + 两轮制（审查时读）
 │   ├── state-management.md               ← 增量/快照/断点恢复（状态管理时读）
+│   ├── config-generation.md              ← 框架识别 + 配置文件生成 + Optuna 集成（Step 2 配置生成时读）
 │   ├── user-choices.md                   ← 用户选择策略（Step 1 数据集选择时读）
 │   ├── report-template.md                ← 报告模板（生成报告时读）
 │   └── results-schema.md                 ← results.json 格式（写结果时读）
@@ -94,6 +95,7 @@ auto-tuner/
 | `experiment/checkpoint-phase{N}.md` | 阶段快照 |
 | `experiment/checkpoints/` | 架构变更前的代码存档 |
 | `experiment/report.md` | 最终报告 |
+| `experiment/report.html` | 可视化 HTML 报告 |
 
 ## 致谢
 

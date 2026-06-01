@@ -26,6 +26,6 @@
 字段说明：
 - `params`：本轮尝试的所有参数及其值
 - `metrics`：对应指标，字段名由 agent 根据项目定义
-- `status`：completed / failed / oom
+- `status`：completed / failed / oom / pruned
 - `duration_min`：该配置运行耗时
 - `memory_peak_gb`：峰值内存/显存占用
