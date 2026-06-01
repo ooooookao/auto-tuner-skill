@@ -18,7 +18,7 @@ description: >
 
 ```
 Step 0 → steps/step0-workspace.md
-  ✓ 确认工作区路径  ✓ 配置权限  ✓ 技能扫描
+  ✓ 确认工作区路径  ✓ 询问是否自动配置权限  ✓ 技能扫描
 
 Step 1 → steps/step1-planning.md
   ✓ 理解项目  ✓ 数据集记录  ✓ baseline 耗时  ✓ 自我辩论选策略  ✓ 参数扫描  ✓ 达标定义
@@ -53,6 +53,10 @@ Step 4 → steps/step4-report.md
 3. **记录一切**：每个决策写入 decision_log.md，每个失败写入 failed_architectures.md
 4. **保守优先**：不确定时选风险最低的方案，后续可以迭代改进
 5. **关键信息写文件**：不依赖对话记忆，上下文可压缩但文件不丢
+
+## 工作区权限
+
+Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是" → 写入 `.claude/settings.json`（合并写入，不覆盖）。详见 `steps/step0-workspace.md`。
 
 ---
 

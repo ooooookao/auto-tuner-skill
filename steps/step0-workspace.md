@@ -1,6 +1,6 @@
 ---
 step: 0
-title: 未知步骤
+title: 确认工作区
 ---
 
 # Step 0：确认工作区与权限配置
@@ -15,11 +15,46 @@ title: 未知步骤
 
 - [ ] 从对话中提取项目路径，若没有则询问用户
 - [ ] 展示：路径、顶层文件列表、是否 Git 仓库，等待用户确认
-- [ ] 调用 `update-config` skill 配置该目录的完整权限（Bash/Read/Write/Edit/Glob/Grep 全部允许）
+- [ ] 询问用户是否自动配置工作区权限（见下方）
 - [ ] 自动检测工作区外的数据集/输出/环境路径，一并配置权限
 - [ ] 技能扫描：检查可用 skill，记录到 `experiment/available_skills.md`
 
 **这是用户唯一需要参与的环节。** 之后所有决策由 agent 自主完成。
+
+---
+
+## 工作区权限配置
+
+确认工作区后，询问用户：
+
+```
+这个 skill 需要使用 Bash、Read、Write、Edit、Glob、Grep 等工具。
+要自动把这些工具的权限配好吗？配好后后续运行不会反复弹确认框。
+权限随时可在 settings.json 中收回。
+- 是，自动配置
+- 不，逐个确认
+```
+
+**用户选"是"** → 读取 `.claude/settings.json`，合并写入 `permissions.allow`：
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Agent(*)"
+    ]
+  }
+}
+```
+
+同时检测工作区外的数据集/输出/环境路径，一并加入权限配置。
+
+**用户选"否"** → 正常运行，每个工具调用逐个确认。
 
 ---
 

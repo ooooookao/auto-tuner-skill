@@ -1,6 +1,6 @@
 ---
 step: 3
-title: 未知步骤
+title: 架构优化
 ---
 
 # Step 3：架构优化
