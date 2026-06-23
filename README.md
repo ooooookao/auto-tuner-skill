@@ -4,11 +4,12 @@
 
 ## 功能特点
 
-- **全程自主**：用户只在开头确认一次工作区，之后自动执行直到出结果
-- **并行调参**：默认 5 路并行，根据 GPU/内存动态调整（上限 8 路）
+- **全程自主，可随时介入**：用户确认工作区后自动执行，每 5 轮输出进度摘要，用户可随时中断调整方向
+- **数据集全面分析**：调参前自动分析数据集（类别分布、质量、特征、可分性），生成报告+可视化，输出调参建议
+- **并行调参**：根据 GPU 显存自动计算并行路数，动态调整（上限 8 路）
 - **智能迭代**：粗搜 → 细搜 → 微调，每轮自动分析趋势缩小范围
-- **参数重要性**：自动计算参数重要性，固定不重要的参数，集中火力调关键参数
-- **提前终止**：训练 20% 时检查趋势，明显不行的配置提前 kill，省 30-50% 时间
+- **参数重要性**：自动计算参数重要性（含交互检测），固定不重要的参数，集中火力调关键参数
+- **提前终止**：训练 20%（有 warmup 时 30%）时检查趋势，明显不行的配置提前 kill，省 30-50% 时间
 - **经验迁移**：跨项目积累调参经验，越用越聪明
 - **自动修复**：代码有 bug 自动定位并修复，最多重试 3 次
 - **架构回溯**：调参 10 轮无提升时自动诊断瓶颈、多源搜索（GitHub/论文/文档/博客）获取思路、修改网络架构、重新调参
@@ -50,14 +51,11 @@ auto-tuner/
 ├── references/
 │   ├── failure-recovery.md               ← 故障熔断规则（遇到故障时读）
 │   ├── github-search.md                  ← GitHub 搜索策略（架构回溯时读）
-│   ├── cost-tracking.md                  ← token 消耗估算（生成报告时读）
 │   ├── experience.md                     ← 经验迁移系统（Step 1 读，Step 4 写）
 │   ├── review-checklist.md               ← 审查维度 + 两轮制（审查时读）
 │   ├── state-management.md               ← 增量/快照/断点恢复（状态管理时读）
 │   ├── config-generation.md              ← 框架识别 + 配置文件生成 + Optuna 集成（Step 2 配置生成时读）
-│   ├── user-choices.md                   ← 用户选择策略（Step 1 数据集选择时读）
-│   ├── report-template.md                ← 报告模板（生成报告时读）
-│   └── results-schema.md                 ← results.json 格式（写结果时读）
+│   └── dataset-analysis.md               ← 数据集全面分析规则（Step 1 数据集分析时读）
 ├── evals/
 │   └── evals.json
 ├── examples/
@@ -77,7 +75,7 @@ auto-tuner/
 
 **审查前置 + 语义边界**：大纲自审在调参前发现问题；每个搜索阶段完成时审查，兜底 15 轮强制触发。
 
-**全程自主**：用户只在 Step 0 确认工作区 + Step 1 选择数据集策略，之后所有决策由 agent 自主完成。
+**全程自主，可随时介入**：用户确认工作区后 agent 自主执行，每 5 轮输出进度摘要，用户可随时中断调整方向。
 
 **经验积累**：每次调参结束后提取关键经验写入经验库，跨项目复用。
 
@@ -85,9 +83,11 @@ auto-tuner/
 
 | 文件 | 说明 |
 |------|------|
-| `experiment/dataset_info.md` | 数据集分析记录 |
+| `experiment/dataset_info.md` | 数据集分析摘要 |
+| `experiment/dataset_analysis_report.md` | 数据集全面分析报告（含可视化） |
+| `experiment/dataset_analysis/` | 数据集分析可视化图片 |
 | `experiment/decision_log.md` | 每轮决策日志 |
-| `experiment/progress.md` | 实时进度（用户可查看） |
+| `experiment/progress.md` | 主状态文件（agent 位置 + 实时进度） |
 | `experiment/results.json` | 每轮参数与指标汇总 |
 | `experiment/failed_architectures.md` | 架构修改失败记录 |
 | `experiment/degradation_log.md` | 降级事件记录 |

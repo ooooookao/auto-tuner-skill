@@ -10,7 +10,7 @@ description: >
 
 # 科研代码自动化调参
 
-通过系统性参数搜索，让实验指标达到预设标准。**全程自主执行**，用户只在开头确认一次工作区，之后等最终结果。
+通过系统性参数搜索，让实验指标达到预设标准。**全程自主执行**，用户确认工作区后 agent 自动迭代，每 5 轮输出进度摘要，用户可随时介入调整方向。
 
 ---
 
@@ -18,10 +18,10 @@ description: >
 
 ```
 Step 0 → steps/step0-workspace.md
-  ✓ 确认工作区路径  ✓ 询问是否自动配置权限  ✓ 技能扫描
+  ✓ 确认工作区路径  ✓ 询问是否自动配置权限（细粒度）  ✓ 技能扫描
 
 Step 1 → steps/step1-planning.md
-  ✓ 理解项目  ✓ 数据集记录  ✓ baseline 耗时  ✓ 自我辩论选策略  ✓ 参数扫描  ✓ 达标定义
+  ✓ 理解项目  ✓ 数据集全面分析（报告+可视化）  ✓ baseline 耗时  ✓ 自我辩论选策略  ✓ 参数扫描  ✓ 达标定义
   ✓ 大纲自审（审查前置）
 
 Step 2 → steps/step2-tuning.md          ← 调参主循环
@@ -32,16 +32,16 @@ Step 3 → steps/step3-optimization.md    ← 仅架构回溯时触发
   ✓ 存档  ✓ 诊断瓶颈  ✓ 多源搜索  ✓ 架构修改  ✓ 验证与回档
 
 Step 4 → steps/step4-report.md
-  ✓ 按模板生成报告  ✓ 架构变更历史（如有）  ✓ 成本记录  ✓ 写入经验库
+  ✓ 按模板生成报告  ✓ 架构变更历史（如有）  ✓ 写入经验库
 ```
 
 **循环结构**：Step 2 是主循环（执行→分析→决策→下一轮），Step 3 仅在架构回溯时从 Step 2 跳入，完成后回到 Step 2。
 
 每步执行时读取对应 step 文件。其他文件按需读取：
 - 故障 → `references/failure-recovery.md`
+- 数据集分析 → `references/dataset-analysis.md`
 - 审查 → `references/review-checklist.md`
 - 状态管理 → `references/state-management.md`
-- 用户决策 → `references/user-choices.md`
 - 经验 → `references/experience.md`
 - 配置生成 → `references/config-generation.md`（框架识别 + 配置文件生成 + Optuna 集成）
 
@@ -49,7 +49,7 @@ Step 4 → steps/step4-report.md
 
 ## 核心原则
 
-1. **全程自主**：用户只确认工作区，之后所有决策由 agent 自主完成
+1. **全程自主，可随时介入**：用户只确认工作区，之后 agent 自主执行，但每 5 轮或阶段切换时输出进度摘要，用户可随时中断调整方向
 2. **先跑通再调参**：代码有 bug 先修，不在坏代码上浪费时间
 3. **记录一切**：每个决策写入 decision_log.md，每个失败写入 failed_architectures.md
 4. **保守优先**：不确定时选风险最低的方案，后续可以迭代改进
@@ -57,7 +57,7 @@ Step 4 → steps/step4-report.md
 
 ## 工作区权限
 
-Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是" → 写入 `.claude/settings.json`（合并写入，不覆盖）。详见 `steps/step0-workspace.md`。
+Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是" → 写入 `.claude/settings.json`（合并写入，不覆盖，细粒度 Bash 权限，不使用 `Bash(*)`）。详见 `steps/step0-workspace.md`。
 
 ---
 
@@ -77,16 +77,20 @@ Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是
 
 ## 生成的文件
 
+以下 `{exp_dir}` 默认为 `experiment/`，若该目录已存在则在 Step 0 中由用户指定其他名称。
+
 | 文件 | 说明 |
 |------|------|
-| `experiment/dataset_info.md` | 数据集分析记录 |
-| `experiment/decision_log.md` | 每轮决策日志 |
-| `experiment/progress.md` | 实时进度（用户可查看） |
-| `experiment/results.json` | 每轮参数与指标汇总（格式见 `references/results-schema.md`） |
-| `experiment/failed_architectures.md` | 架构修改失败记录 |
-| `experiment/degradation_log.md` | 降级事件记录 |
-| `experiment/delta-step{N}.md` | 每步增量记录 |
-| `experiment/checkpoint-phase{N}.md` | 阶段快照 |
-| `experiment/checkpoints/` | 架构变更前的代码存档 |
-| `experiment/report.md` | 最终报告（模板见 `references/report-template.md`） |
-| `experiment/report.html` | 可视化 HTML 报告（含图表，无依赖时为纯表格） |
+| `{exp_dir}/dataset_info.md` | 数据集分析摘要 |
+| `{exp_dir}/dataset_analysis_report.md` | 数据集全面分析报告（含可视化） |
+| `{exp_dir}/dataset_analysis/` | 数据集分析可视化图片 |
+| `{exp_dir}/decision_log.md` | 每轮决策日志 |
+| `{exp_dir}/progress.md` | 主状态文件（agent 位置 + 实时进度，用户可查看） |
+| `{exp_dir}/results.json` | 每轮参数与指标汇总（格式见 step2-tuning.md） |
+| `{exp_dir}/failed_architectures.md` | 架构修改失败记录 |
+| `{exp_dir}/degradation_log.md` | 降级事件记录 |
+| `{exp_dir}/delta-step{N}.md` | 每步增量记录 |
+| `{exp_dir}/checkpoint-phase{N}.md` | 阶段快照 |
+| `{exp_dir}/checkpoints/` | 架构变更前的代码存档 |
+| `{exp_dir}/report.md` | 最终报告（模板见 step4-report.md） |
+| `{exp_dir}/report.html` | 可视化 HTML 报告（含图表，无依赖时为纯表格） |

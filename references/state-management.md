@@ -36,7 +36,7 @@
 | 1 | 项目目标、数据集特征、baseline 指标、调参策略、参数表、达标标准 |
 | 2 | 每轮配置数量、最佳指标、资源使用、压缩事件、配置生成策略决策、采样策略变更、Optuna 使用情况 |
 | 3 | 架构变更内容、前后对比、验证轮次结果 |
-| 4 | 报告路径、最终指标、成本统计 |
+| 4 | 报告路径、最终指标、耗时统计 |
 
 ---
 
@@ -50,7 +50,9 @@
 - 细搜完成 → checkpoint-phase2.md
 - 微调完成 → checkpoint-phase3.md
 - 架构变更前 → checkpoint-vN/（代码快照）
-- 架构回溯后重新粗搜 → checkpoint-vN-phase1.md（使用架构版本号前缀，避免与之前架构的 checkpoint 混淆）
+- 架构回溯后重新粗搜 → checkpoint-v2-phase1.md（使用架构版本号前缀）
+
+**命名规则**：架构回溯后的 checkpoint 使用 `checkpoint-v{N}-phase{M}.md` 格式（v=架构版本，M=搜索阶段）。首次架构为 v1，不加前缀（即 `checkpoint-phase1.md`）。后续架构 v2、v3... 加前缀以区分。
 
 ### 快照内容
 
@@ -84,10 +86,11 @@
 
 ### 恢复流程
 
-1. 读最近的 checkpoint-phase{N}.md
-2. 读 checkpoint 之后的所有 delta-step{N}.md
-3. 合并状态，确定当前进度
-4. 从断点继续执行
+1. **读 progress.md**（主状态文件，读"当前状态"节 + 完整历史）
+2. 读最近的 checkpoint-phase{N}.md
+3. 读 checkpoint 之后的所有 delta-step{N}.md
+4. 合并状态，确定当前进度
+5. 从断点继续执行
 
 ### 恢复检查
 
@@ -117,5 +120,7 @@
 | 早期轮次详情 | 压缩为摘要 | 完整保留 |
 | 关键决策 | 保留 | decision_log.md |
 | 失败记录 | 可压缩 | failed_architectures.md 完整 |
+| 用户干预 | 可压缩 | progress.md 完整 |
+| 阶段切换 | 可压缩 | progress.md 完整 |
 
-压缩时只压缩对话上下文中的内容，不修改文件。
+压缩时只压缩对话上下文中的内容，不修改文件。**压缩后必须读取 progress.md 恢复被压缩的关键信息**。
