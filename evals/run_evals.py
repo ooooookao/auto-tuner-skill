@@ -155,6 +155,27 @@ def is_metric_better(new_val, old_val, operator=">="):
     return new_val > old_val  # fallback
 
 
+def is_significant_improvement(new_val, old_val, operator=">=", epsilon=0.005):
+    """
+    判断新指标是否相对旧指标产生了超过 epsilon 的有效提升。
+
+    >= 指标：new_val > old_val + epsilon
+    <= 指标：new_val < old_val - epsilon
+
+    等于阈值不算有效提升。
+    """
+    if new_val is None or old_val is None:
+        return False
+
+    if operator == ">=":
+        return new_val > old_val + epsilon
+
+    if operator == "<=":
+        return new_val < old_val - epsilon
+
+    raise ValueError(f"Unsupported target operator: {operator}")
+
+
 def check_termination(state):
     """
     Step 2.5 termination routing.
@@ -226,12 +247,26 @@ def simulate_round(state, round_metrics):
         new_state["best_metrics"] = new_metrics
         new_state["best_config_id"] = f"config-{new_state['round']:03d}"
 
-    # Consecutive no improvement detection
+    # Consecutive no-improvement detection.
+    # Direction must follow the primary target operator:
+    # >= means higher is better, <= means lower is better.
     if prev_primary is not None and new_primary is not None:
-        if new_primary <= prev_primary + 0.005:
-            new_state["consecutive_no_improvement"] = new_state.get("consecutive_no_improvement", 0) + 1
-        else:
+        conditions = new_state.get("target_conditions") or []
+        primary_operator = conditions[0]["operator"] if conditions else ">="
+
+        improved = is_significant_improvement(
+            new_val=new_primary,
+            old_val=prev_primary,
+            operator=primary_operator,
+            epsilon=0.005,
+        )
+
+        if improved:
             new_state["consecutive_no_improvement"] = 0
+        else:
+            new_state["consecutive_no_improvement"] = (
+                new_state.get("consecutive_no_improvement", 0) + 1
+            )
     else:
         new_state["consecutive_no_improvement"] = 0
 
@@ -483,6 +518,7 @@ def case_sklearn_lightweight():
                     "status": "completed", "duration_min": 2,
                     "gpu_memory_gb": None,
                     "seed": 42, "commit_hash": None, "error_type": None,
+                    "attempt": 1, "retry_of": None,
                 },
                 {
                     "config_id": "config-002",
@@ -492,6 +528,7 @@ def case_sklearn_lightweight():
                     "status": "completed", "duration_min": 3,
                     "gpu_memory_gb": None,
                     "seed": 43, "commit_hash": None, "error_type": None,
+                    "attempt": 1, "retry_of": None,
                 },
             ],
             "best_config_id": "config-002",
@@ -778,19 +815,154 @@ def case_stagnation_continuous_improvement():
     return c
 
 
+def case_loss_continuous_improvement():
+    """
+    回归测试：
+    loss 属于 <= 指标，连续下降代表持续改善。
+
+    验证：
+    1. best_metrics 持续更新；
+    2. consecutive_no_improvement 始终为 0；
+    3. 不触发 architecture_search；
+    4. 不触发 stagnated；
+    5. simulate_round 不修改原始 state。
+    """
+    c = CheckResult("loss-continuous-improvement")
+
+    state = {
+        "phase": "tuning",
+        "round": 0,
+        "architecture_version": 1,
+        "search_stage": "coarse",
+        "best_config_id": None,
+        "best_metrics": {},
+        "target_expr": "loss <= 0.10",
+        "target_conditions": [
+            {
+                "metric": "loss",
+                "operator": "<=",
+                "value": 0.10,
+            }
+        ],
+        "last_action": None,
+        "next_action": "generate_configs",
+        "stop_reason": None,
+        "retry_count": 0,
+        "consecutive_no_improvement": 0,
+        "last_round_best_metric": None,
+        "last_updated": "2026-06-29T00:00:00Z",
+    }
+
+    original_state = deepcopy(state)
+    s = state
+
+    # 15 rounds, loss decreases by 0.02 each round.
+    # Final loss is still above target, so tuning must continue.
+    losses = [0.60 - i * 0.02 for i in range(15)]
+
+    for loss_value in losses:
+        previous_best = (
+            s.get("best_metrics", {}).get("loss")
+            if s.get("best_metrics")
+            else None
+        )
+
+        s = simulate_round(
+            s,
+            {
+                "best_metric": loss_value,
+                "metrics": {"loss": loss_value},
+            },
+        )
+
+        c.check(
+            f"loss={loss_value:.2f}: consecutive_no_improvement=0",
+            s.get("consecutive_no_improvement") == 0,
+        )
+
+        c.check(
+            f"loss={loss_value:.2f}: 未进入 architecture_search",
+            s.get("next_action") != "architecture_search",
+        )
+
+        if previous_best is not None:
+            c.check(
+                f"loss={loss_value:.2f}: best loss 继续下降",
+                s.get("best_metrics", {}).get("loss") < previous_best,
+            )
+
+    c.check("完成 15 轮", s["round"] == 15)
+
+    c.check(
+        "最终 best_metrics.loss 等于最后一轮 loss",
+        abs(s.get("best_metrics", {}).get("loss") - losses[-1]) < 1e-12,
+    )
+
+    c.check(
+        "连续有效改善后 consecutive_no_improvement=0",
+        s.get("consecutive_no_improvement") == 0,
+    )
+
+    c.check(
+        "未触发 architecture_search",
+        s.get("next_action") != "architecture_search",
+    )
+
+    c.check(
+        "未触发 stagnated",
+        s.get("stop_reason") != "stagnated",
+    )
+
+    c.check(
+        "仍处于 tuning 阶段",
+        s.get("phase") == "tuning",
+    )
+
+    c.check(
+        "下一步继续生成配置",
+        s.get("next_action") == "generate_configs",
+    )
+
+    state_status, state_message = validate_state_schema(s)
+    c.check(
+        "最终 state 通过 state.schema.json",
+        state_status,
+        state_message,
+    )
+
+    c.check(
+        "simulate_round 是纯函数，原始 state 未变",
+        state == original_state,
+    )
+
+    return c
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════════
 
 CASE_REGISTRY = [
-    # (case_id, display_name, runner)  — case_id matches evals.json
-    ("classification-success",          "Classification Normal",      case_classification_success),
-    ("segmentation-architecture-fallback", "Architecture Fallback",   case_segmentation_architecture_fallback),
-    ("sklearn-lightweight",             "Sklearn Lightweight",        case_sklearn_lightweight),
-    ("oom-recovery",                    "OOM Recovery",              case_oom_recovery),
-    ("early-target-reached",            "Early Target Reached",      case_early_target_reached),
-    ("no-auto-relax-target",            "No Auto-Relax Target",     case_no_auto_relax_target),
-    ("stagnation-continuous-improvement", "Stagnation Regression",  case_stagnation_continuous_improvement),
+    ("classification-success", "Classification Normal", case_classification_success),
+    (
+        "segmentation-architecture-fallback",
+        "Architecture Fallback",
+        case_segmentation_architecture_fallback,
+    ),
+    ("sklearn-lightweight", "Sklearn Lightweight", case_sklearn_lightweight),
+    ("oom-recovery", "OOM Recovery", case_oom_recovery),
+    ("early-target-reached", "Early Target Reached", case_early_target_reached),
+    ("no-auto-relax-target", "No Auto-Relax Target", case_no_auto_relax_target),
+    (
+        "stagnation-continuous-improvement",
+        "Stagnation Regression",
+        case_stagnation_continuous_improvement,
+    ),
+    (
+        "loss-continuous-improvement",
+        "Loss Continuous Improvement",
+        case_loss_continuous_improvement,
+    ),
 ]
 
 

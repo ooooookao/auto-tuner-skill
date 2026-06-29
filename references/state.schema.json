@@ -55,14 +55,27 @@
     },
     "target_conditions": {
       "type": "array",
-      "description": "结构化达标条件，供机器精确判达标",
+      "minItems": 1,
+      "description": "结构化达标条件，至少包含一个条件，供机器精确判达标",
       "items": {
         "type": "object",
         "required": ["metric", "operator", "value"],
+        "additionalProperties": false,
         "properties": {
-          "metric": { "type": "string", "description": "指标名" },
-          "operator": { "type": "string", "enum": [">=", "<="], "description": "比较运算符" },
-          "value": { "type": "number", "description": "目标值" }
+          "metric": {
+            "type": "string",
+            "minLength": 1,
+            "description": "指标名"
+          },
+          "operator": {
+            "type": "string",
+            "enum": [">=", "<="],
+            "description": "比较运算符"
+          },
+          "value": {
+            "type": "number",
+            "description": "目标值"
+          }
         }
       }
     },

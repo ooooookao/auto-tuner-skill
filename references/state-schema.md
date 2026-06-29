@@ -24,6 +24,7 @@
   "best_config_id": null | "config-001",
   "best_metrics": {},
   "target_expr": "dice >= 0.90",
+  "target_conditions": [{"metric": "dice", "operator": ">=", "value": 0.90}],
   "last_action": null | "step1_planning" | "generate_configs" | "run_experiments" | "analyze_results" | "architecture_search" | "generate_report" | "waiting_user",
   "next_action": "step1_planning" | "generate_configs" | "run_experiments" | "analyze_results" | "check_termination" | "architecture_search" | "generate_report" | "waiting_user",
   "stop_reason": null | "target_reached" | "too_many_rounds" | "user_stopped" | "budget_exhausted",
@@ -45,6 +46,7 @@
 | `best_config_id` | string\|null | ✅ | 全局最佳配置 ID |
 | `best_metrics` | object | ✅ | 全局最佳指标，如 `{"dice": 0.89}` |
 | `target_expr` | string | ✅ | 达标条件表达式，如 `"dice >= 0.90 且 loss < 0.10"` |
+| `target_conditions` | array | ✅ | 结构化达标条件，至少包含一个条件。每条含 metric（指标名）、operator（>= 越大越好 / <= 越小越好）、value（目标值）。连续无提升判断必须遵守 operator 方向。 |
 | `last_action` | string\|null | ✅ | 刚完成的动作 |
 | `next_action` | string | ✅ | 下一步动作 — agent 读这个字段就知道该干什么（见下方"状态转换表"） |
 | `stop_reason` | string\|null | ✅ | 停止原因，phase 不为 completed/stopped 时必为 null |

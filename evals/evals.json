@@ -70,12 +70,23 @@
         "termination",
         "regression"
       ]
+    },
+    {
+      "id": "loss-continuous-improvement",
+      "description": "回归测试：<= 指标持续下降应视为持续改善，不触发架构回溯或停滞",
+      "priority": 1,
+      "target": [
+        "state_machine",
+        "metric_direction",
+        "termination",
+        "regression"
+      ]
     }
   ],
-  "last_run": "2026-06-29T23:45:00Z",
+  "last_run": "2026-06-30T00:30:00Z",
   "last_result": {
-    "passed": 90,
-    "skipped": 5,
+    "passed": 148,
+    "skipped": 0,
     "failed": 0
   }
 }

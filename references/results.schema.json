@@ -85,7 +85,7 @@
             "error_type": {
               "type": ["string", "null"],
               "enum": [null, "OOM", "NaN", "runtime_error", "import_error", "file_not_found", "timeout", "unknown"],
-              "description": "失败类型。completed 时必为 null；oom/failed/pruned 时必不为 null"
+              "description": "运行错误类型。completed 和 pruned 时必须为 null；oom 和 failed 时必须为非 null。"
             },
             "attempt": {
               "type": "integer",
@@ -128,6 +128,16 @@
                   { "properties": { "error_type": { "enum": ["NaN", "runtime_error", "import_error", "file_not_found", "timeout", "unknown"] } } },
                   { "not": { "properties": { "error_type": { "const": null } } } }
                 ]
+              }
+            },
+            {
+              "if": {
+                "properties": { "status": { "const": "pruned" } }
+              },
+              "then": {
+                "properties": {
+                  "error_type": { "const": null }
+                }
               }
             }
           ]
