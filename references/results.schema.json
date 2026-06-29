@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AutoTunerResults",
-  "description": "每轮调参结果记录的 JSON Schema。每轮向 experiment/results.json 追加一条记录。",
+  "description": "每轮调参结果记录的 JSON Schema。每轮向 experiment/results.json 追加一条记录。使用 python -c \"from jsonschema import validate, FormatChecker; validate(instance=data, schema=schema, format_checker=FormatChecker())\" 校验。",
   "type": "array",
   "items": {
     "type": "object",
@@ -21,7 +21,7 @@
       "timestamp": {
         "type": "string",
         "format": "date-time",
-        "description": "本轮完成时的 ISO 8601 时间戳"
+        "description": "本轮完成时的 ISO 8601 时间戳。注意：jsonschema 默认不校验 date-time 格式，需显式传入 format_checker=FormatChecker()"
       },
       "configs": {
         "type": "array",
@@ -38,8 +38,7 @@
           "properties": {
             "config_id": {
               "type": "string",
-              "pattern": "^config-\\d{3}$",
-              "description": "配置唯一标识，格式 config-NNN"
+              "description": "配置唯一标识，格式 config-NNN。重试可用 config-NNN-retry"
             },
             "params": {
               "type": "object",
@@ -48,8 +47,7 @@
             },
             "metrics": {
               "type": "object",
-              "description": "评估指标键值对，key 为指标名，value 为数值",
-              "minProperties": 1
+              "description": "评估指标键值对。status=completed 时至少 1 个字段；oom/failed/pruned 允许为空"
             },
             "train_loss": {
               "type": ["number", "null"],
@@ -84,17 +82,52 @@
             "error_type": {
               "type": ["string", "null"],
               "enum": [null, "OOM", "NaN", "runtime_error", "import_error", "file_not_found", "timeout", "unknown"],
-              "description": "失败类型，status 为 completed 时必为 null"
+              "description": "失败类型。completed 时必为 null；oom/failed/pruned 时必不为 null"
+            },
+            "attempt": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "实验尝试次数，首次为 1。OOM 重试 batch_size 减半后 attempt=2"
+            },
+            "retry_of": {
+              "type": ["string", "null"],
+              "description": "若为重试配置，指向原始 config_id"
             }
           },
-          "if": {
-            "properties": { "status": { "const": "completed" } }
-          },
-          "then": {
-            "properties": {
-              "error_type": { "const": null }
+          "allOf": [
+            {
+              "if": {
+                "properties": { "status": { "const": "completed" } }
+              },
+              "then": {
+                "properties": {
+                  "error_type": { "const": null },
+                  "metrics": { "minProperties": 1 }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "status": { "const": "oom" } }
+              },
+              "then": {
+                "properties": {
+                  "error_type": { "enum": ["OOM", "unknown"] }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "status": { "const": "failed" } }
+              },
+              "then": {
+                "anyOf": [
+                  { "properties": { "error_type": { "enum": ["NaN", "runtime_error", "import_error", "file_not_found", "timeout", "unknown"] } } },
+                  { "not": { "properties": { "error_type": { "const": null } } } }
+                ]
+              }
             }
-          }
+          ]
         }
       },
       "best_config_id": {

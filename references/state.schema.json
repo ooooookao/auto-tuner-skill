@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AutoTunerState",
+  "description": "experiment/state.json 的 JSON Schema。每次状态变化后覆盖写，始终反映最新状态。",
+  "type": "object",
+  "required": [
+    "phase",
+    "round",
+    "architecture_version",
+    "search_stage",
+    "best_config_id",
+    "best_metrics",
+    "target_expr",
+    "last_action",
+    "next_action",
+    "stop_reason",
+    "retry_count",
+    "consecutive_no_improvement",
+    "last_round_best_metric",
+    "last_updated"
+  ],
+  "properties": {
+    "phase": {
+      "type": "string",
+      "enum": ["planning", "tuning", "optimization", "reporting", "completed", "stopped"],
+      "description": "当前大阶段。Step 1→planning, Step 2→tuning, Step 3→optimization, Step 4→reporting, 完成→completed, 放弃→stopped"
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "当前轮次数，从 1 开始。Step 1 阶段为 0"
+    },
+    "architecture_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "架构版本号，从 1 开始。架构回溯后 +1"
+    },
+    "search_stage": {
+      "type": ["string", "null"],
+      "enum": [null, "coarse", "fine", "refine"],
+      "description": "粗搜/细搜/微调。Step 1 和架构回溯刚完成时为 null"
+    },
+    "best_config_id": {
+      "type": ["string", "null"],
+      "description": "全局最佳配置 ID"
+    },
+    "best_metrics": {
+      "type": "object",
+      "description": "全局最佳指标键值对，如 {\"dice\": 0.89}"
+    },
+    "target_expr": {
+      "type": "string",
+      "description": "达标条件表达式，如 \"dice >= 0.90 AND loss <= 0.10\""
+    },
+    "last_action": {
+      "type": ["string", "null"],
+      "enum": [null, "step1_planning", "generate_configs", "run_experiments", "analyze_results", "architecture_search", "generate_report", "waiting_user"],
+      "description": "刚完成的动作"
+    },
+    "next_action": {
+      "type": "string",
+      "enum": ["step1_planning", "generate_configs", "run_experiments", "analyze_results", "check_termination", "architecture_search", "generate_report", "waiting_user", "completed", "stopped"],
+      "description": "下一步动作—agent 读此字段决定行为"
+    },
+    "stop_reason": {
+      "type": ["string", "null"],
+      "enum": [null, "target_reached", "too_many_rounds", "too_many_architectures", "stagnated", "quality_meltdown", "user_stopped", "budget_exhausted"],
+      "description": "停止原因。phase 不为 completed/stopped 时必为 null"
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "当前故障重试计数，成功时归零"
+    },
+    "consecutive_no_improvement": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "连续无提升轮数（用于死循环检测和质量熔断）"
+    },
+    "last_round_best_metric": {
+      "type": ["number", "null"],
+      "description": "上一轮最佳指标的数值，便于快速比较"
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 时间戳"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "phase": { "enum": ["completed", "stopped"] } }
+      },
+      "then": {
+        "required": ["stop_reason"],
+        "properties": {
+          "stop_reason": { "not": { "type": "null" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "phase": { "enum": ["planning", "tuning", "optimization", "reporting"] } }
+      },
+      "then": {
+        "properties": {
+          "stop_reason": { "type": "null" }
+        }
+      }
+    }
+  ]
+}

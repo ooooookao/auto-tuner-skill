@@ -6,16 +6,16 @@ Auto-Tuner Evals: 状态机决策逻辑 + 文件契约验证。
 验证 state.json / results.json / routing 是否符合 skill 规范。
 
 用法:
-  python evals/run_evals.py              # 全部跑
-  python evals/run_evals.py -v           # 详细输出
-  python evals/run_evals.py --case=oom   # 只跑某个 case（子串匹配）
+  python evals/run_evals.py                        # 全部跑
+  python evals/run_evals.py -v                     # 详细输出
+  python evals/run_evals.py --case=classification  # 只跑单个场景
+  python evals/run_evals.py --ci                   # CI 模式（无 jsonschema = FAIL）
 """
 
 import json
-import os
-import re
 import sys
 import traceback
+from copy import deepcopy
 from pathlib import Path
 
 # Windows GBK console compatibility
@@ -24,8 +24,7 @@ if sys.platform == "win32":
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 RESULTS_SCHEMA_PATH = SKILL_DIR / "references" / "results.schema.json"
-STATE_SCHEMA_PATH = SKILL_DIR / "references" / "state-schema.md"
-EVALS_JSON_PATH = SKILL_DIR / "evals" / "evals.json"
+STATE_SCHEMA_PATH = SKILL_DIR / "references" / "state.schema.json"
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -36,81 +35,116 @@ SKIP = "SKIP"
 # ═══════════════════════════════════════════════════════════════════
 
 HAS_JSONSCHEMA = False
+FormatChecker = None
 try:
     from jsonschema import validate as jsonschema_validate, ValidationError
+    from jsonschema import FormatChecker as _FormatChecker
+    FormatChecker = _FormatChecker
     HAS_JSONSCHEMA = True
 except ImportError:
     pass
 
+CI_MODE = False  # set by --ci flag
+
 
 def validate_results_schema(data):
-    """returns (ok: bool, message: str)"""
+    """returns (status: str, message: str)"""
     if not HAS_JSONSCHEMA:
+        if CI_MODE:
+            return FAIL, "jsonschema not installed (CI mode: FAIL)"
         return SKIP, "jsonschema not installed, skipped"
     if not RESULTS_SCHEMA_PATH.exists():
-        return SKIP, f"schema not found at {RESULTS_SCHEMA_PATH}, skipped"
+        return FAIL, f"schema not found at {RESULTS_SCHEMA_PATH}"
     try:
-        with open(RESULTS_SCHEMA_PATH) as f:
+        with open(RESULTS_SCHEMA_PATH, encoding="utf-8") as f:
             schema = json.load(f)
-        jsonschema_validate(instance=data, schema=schema)
+        kwargs = {"format_checker": FormatChecker()} if FormatChecker else {}
+        jsonschema_validate(instance=data, schema=schema, **kwargs)
         return PASS, ""
     except ValidationError as e:
-        return FAIL, str(e)[:300]
+        return FAIL, str(e)[:400]
+    except Exception as e:
+        return FAIL, f"unexpected error: {e}"
 
 
-def validate_state_json(data):
-    """Validate state.json has required fields and types."""
-    required = ["phase", "round", "architecture_version", "next_action"]
-    for field in required:
-        if field not in data:
-            return FAIL, f"missing required field: {field}"
-
-    valid_phases = ["planning", "tuning", "optimization", "reporting", "completed", "stopped"]
-    if data.get("phase") not in valid_phases:
-        return FAIL, f"invalid phase: {data.get('phase')}"
-
-    valid_next = [
-        "step1_planning", "generate_configs", "run_experiments",
-        "analyze_results", "check_termination", "architecture_search",
-        "generate_report", "waiting_user", "completed", "stopped"
-    ]
-    if data.get("next_action") not in valid_next:
-        return FAIL, f"invalid next_action: {data.get('next_action')}"
-
-    if not isinstance(data.get("round"), int) or data["round"] < 0:
-        return FAIL, f"round must be non-negative int, got {data.get('round')}"
-    if not isinstance(data.get("architecture_version"), int) or data["architecture_version"] < 1:
-        return FAIL, f"architecture_version must be positive int, got {data.get('architecture_version')}"
-    if not isinstance(data.get("consecutive_no_improvement", 0), int):
-        return FAIL, f"consecutive_no_improvement must be int"
-
-    if data.get("phase") in ("completed", "stopped") and not data.get("stop_reason"):
-        return FAIL, "terminal phase requires stop_reason"
-
-    return PASS, ""
+def validate_state_schema(data):
+    """returns (status: str, message: str)"""
+    if not HAS_JSONSCHEMA:
+        if CI_MODE:
+            return FAIL, "jsonschema not installed (CI mode: FAIL)"
+        return SKIP, "jsonschema not installed, skipped"
+    if not STATE_SCHEMA_PATH.exists():
+        return FAIL, f"state.schema.json not found at {STATE_SCHEMA_PATH}"
+    try:
+        with open(STATE_SCHEMA_PATH, encoding="utf-8") as f:
+            schema = json.load(f)
+        kwargs = {"format_checker": FormatChecker()} if FormatChecker else {}
+        jsonschema_validate(instance=data, schema=schema, **kwargs)
+        return PASS, ""
+    except ValidationError as e:
+        return FAIL, str(e)[:400]
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Core State Machine Logic (mirrors state-schema.md + step2-tuning)
+#  Core State Machine Logic — all PURE functions (no mutation)
 # ═══════════════════════════════════════════════════════════════════
+
+TARGET_OPERATORS = {
+    ">=": lambda actual, target: actual >= target,
+    "<=": lambda actual, target: actual <= target,
+}
+
 
 def is_target_reached(state):
-    """Check best_metrics >= _target_values for every key."""
-    metrics = state.get("best_metrics") or {}
-    target = state.get("_target_values") or {}
-    if not target:
+    """
+    Check all target_conditions are met.
+    target_conditions format:
+      [{"metric": "dice", "operator": ">=", "value": 0.90},
+       {"metric": "loss", "operator": "<=", "value": 0.10}]
+    """
+    conditions = state.get("target_conditions") or []
+    if not conditions:
         return False
-    for key, required in target.items():
-        actual = metrics.get(key)
-        if actual is None or actual < required:
+    metrics = state.get("best_metrics") or {}
+    for cond in conditions:
+        actual = metrics.get(cond["metric"])
+        if actual is None:
+            return False
+        op_fn = TARGET_OPERATORS.get(cond["operator"])
+        if not op_fn or not op_fn(actual, cond["value"]):
             return False
     return True
+
+
+def compute_worst_distance(state):
+    """
+    Compute the maximum *normalized* distance to target.
+    Used for architecture backtrack: if the worst unment condition
+    is still close, backtrack is unnecessary.
+    Returns float >= 0 (0 = all targets met).
+    """
+    conditions = state.get("target_conditions") or []
+    metrics = state.get("best_metrics") or {}
+    distances = []
+    for cond in conditions:
+        actual = metrics.get(cond["metric"])
+        if actual is None:
+            distances.append(1.0)  # no data = maximum distance
+            continue
+        if cond["operator"] == ">=":
+            deficit = max(0.0, cond["value"] - actual) / max(cond["value"], 1e-8)
+        elif cond["operator"] == "<=":
+            deficit = max(0.0, actual - cond["value"]) / max(cond["value"], 1e-8)
+        else:
+            continue
+        distances.append(deficit)
+    return max(distances) if distances else 0.0
 
 
 def check_termination(state):
     """
     Step 2.5 termination routing.
-    Returns (next_action, stop_reason), does NOT mutate state.
+    Pure function: returns (next_action, stop_reason), does NOT mutate state.
     """
     # 1. Target reached → report
     if is_target_reached(state):
@@ -118,27 +152,18 @@ def check_termination(state):
 
     round_num = state.get("round", 0)
     consecutive = state.get("consecutive_no_improvement", 0)
-    distance = None
-    target = state.get("_target_values") or {}
-    metrics = state.get("best_metrics") or {}
-    if target and metrics:
-        for key, required in target.items():
-            actual = metrics.get(key)
-            if actual is not None:
-                d = required - actual
-                distance = d if distance is None else min(distance, d)
+    distance = compute_worst_distance(state)
 
     # 2. Give up conditions
     if round_num >= 3 and state.get("architecture_version", 1) >= 4:
         return "generate_report", "too_many_architectures"
     if round_num >= 50:
         return "generate_report", "too_many_rounds"
-    if round_num >= 15 and distance is not None and distance > 0.05:
-        if state.get("best_metrics") == state.get("_best_15_rounds_ago"):
-            return "generate_report", "stagnated"
+    if round_num >= 15 and distance > 0.05:
+        return "generate_report", "stagnated"
 
     # 3. Architecture backtrack: consecutive 10+ rounds no improvement
-    if consecutive >= 10 and distance is not None and distance > 0.03:
+    if consecutive >= 10 and distance > 0.03:
         return "architecture_search", None
 
     # Default: continue
@@ -147,76 +172,118 @@ def check_termination(state):
 
 def simulate_round(state, round_metrics):
     """
-    Advance state by one round of experiments.
+    Pure function: returns NEW state after one round of experiments.
+    Does NOT mutate input state.
+
     round_metrics: dict with keys:
-        - best_metric: float (the primary metric value for this round)
+        - best_metric: float (primary metric value for this round)
         - metrics: dict of all metrics
         - search_stage: str or None (None = keep existing)
-    Returns updated state (mutated in place for simplicity).
     """
-    prev_round = state.get("round", 0)
-    state["round"] = prev_round + 1
-    state["last_action"] = "analyze_results"
+    new_state = deepcopy(state)
+    prev_round = new_state.get("round", 0)
+    new_state["round"] = prev_round + 1
+    new_state["last_action"] = "analyze_results"
 
-    # Update best metrics
-    current_best = state.get("best_metrics") or {}
     new_metrics = round_metrics.get("metrics", {})
-    # Determine if new round's primary metric is better
-    prev_primary = state.get("last_round_best_metric")
+    prev_primary = new_state.get("last_round_best_metric")
     new_primary = round_metrics.get("best_metric")
 
-    # Update best global
+    # Determine if this round improves the global best
     new_is_better = False
     if new_primary is not None:
         if prev_primary is None:
             new_is_better = True
         else:
-            # Compare by taking the primary metric name from target
-            target = state.get("_target_values") or {}
-            for key in target:
-                old_val = current_best.get(key)
-                new_val = new_metrics.get(key)
+            conditions = new_state.get("target_conditions") or []
+            current_best = new_state.get("best_metrics") or {}
+            for cond in conditions:
+                old_val = current_best.get(cond["metric"])
+                new_val = new_metrics.get(cond["metric"])
                 if new_val is not None and (old_val is None or new_val > old_val):
                     new_is_better = True
                     break
             if not new_is_better:
-                # Fallback: compare primary
                 new_is_better = new_primary > (prev_primary or 0)
 
     if new_is_better:
-        state["best_metrics"] = new_metrics
-        state["best_config_id"] = f"config-{state['round']:03d}"
+        new_state["best_metrics"] = new_metrics
+        new_state["best_config_id"] = f"config-{new_state['round']:03d}"
 
     # Consecutive no improvement detection
     if prev_primary is not None and new_primary is not None:
         if new_primary <= prev_primary + 0.005:
-            state["consecutive_no_improvement"] = state.get("consecutive_no_improvement", 0) + 1
+            new_state["consecutive_no_improvement"] = new_state.get("consecutive_no_improvement", 0) + 1
         else:
-            state["consecutive_no_improvement"] = 0
+            new_state["consecutive_no_improvement"] = 0
     else:
-        state["consecutive_no_improvement"] = 0
+        new_state["consecutive_no_improvement"] = 0
 
     if new_primary is not None:
-        state["last_round_best_metric"] = new_primary
+        new_state["last_round_best_metric"] = new_primary
 
     # Search stage transition
     new_stage = round_metrics.get("search_stage")
     if new_stage:
-        state["search_stage"] = new_stage
+        new_state["search_stage"] = new_stage
 
     # Termination check
-    next_action, stop_reason = check_termination(state)
-    state["next_action"] = next_action
+    next_action, stop_reason = check_termination(new_state)
+    new_state["next_action"] = next_action
     if stop_reason:
-        state["stop_reason"] = stop_reason
+        new_state["stop_reason"] = stop_reason
     if next_action == "generate_report":
-        state["phase"] = "reporting"
+        new_state["phase"] = "reporting"
     elif next_action == "architecture_search":
-        state["phase"] = "optimization"
-        state["architecture_version"] = state.get("architecture_version", 1) + 1
-        state["search_stage"] = None
+        new_state["phase"] = "optimization"
+        new_state["architecture_version"] = new_state.get("architecture_version", 1) + 1
+        new_state["search_stage"] = None
 
-    return state
+    return new_state
+
+
+def handle_quality_meltdown(state, user_response=None):
+    """
+    Pure function: implements failure-recovery.md quality meltdown rules.
+    Returns (new_state, requires_user_input: bool).
+
+    user_response=None → no input yet (meltdown just triggered)
+    user_response="reject" | "timeout" → continue without changing target
+    user_response="confirm" → user explicitly accepted new target
+    """
+    new_state = deepcopy(state)
+    meltdown_count = new_state.get("retry_count", 0) + 1
+    new_state["retry_count"] = meltdown_count
+
+    if meltdown_count == 1:
+        # 第 1 次熔断 → 换调参策略重试，目标不变
+        new_state["next_action"] = "generate_configs"
+        new_state["last_action"] = "quality_meltdown_1"
+        return new_state, False
+
+    if meltdown_count == 2:
+        # 第 2 次熔断 → 请求用户确认，绝不自动修改 target_expr / target_conditions
+        if user_response == "confirm":
+            # 用户主动设置了新目标 → 新目标已经在 state 中，保留
+            new_state["next_action"] = "generate_configs"
+        elif user_response in ("reject", "timeout"):
+            # 用户拒绝或超时 → 原目标不变，继续尝试
+            new_state["next_action"] = "generate_configs"
+        else:
+            # 等待用户输入
+            new_state["next_action"] = "waiting_user"
+            new_state["last_action"] = "quality_meltdown_2_waiting"
+            return new_state, True
+        new_state["last_action"] = "quality_meltdown_2_resolved"
+        return new_state, False
+
+    # meltdown_count >= 3
+    # 第 3 次熔断 → 停止
+    new_state["phase"] = "stopped"
+    new_state["next_action"] = "generate_report"
+    new_state["stop_reason"] = "quality_meltdown"
+    new_state["last_action"] = "quality_meltdown_3"
+    return new_state, False
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -261,7 +328,7 @@ class CheckResult:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Test Cases
+#  Test Cases  —  case_id 必须与 evals.json 中的 id 一致
 # ═══════════════════════════════════════════════════════════════════
 
 def case_classification_success():
@@ -272,13 +339,13 @@ def case_classification_success():
         "phase": "tuning", "round": 0, "architecture_version": 1,
         "search_stage": "coarse", "best_config_id": None,
         "best_metrics": {}, "target_expr": "accuracy >= 0.90",
-        "_target_values": {"accuracy": 0.90},
+        "target_conditions": [{"metric": "accuracy", "operator": ">=", "value": 0.90}],
         "last_action": None, "next_action": "generate_configs",
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 0, "last_round_best_metric": None,
+        "last_updated": "2026-06-29T00:00:00Z",
     }
 
-    # Simulate 5 rounds: 0.78 → 0.83 → 0.87 → 0.89 → 0.91 (target reached)
     rounds = [
         {"best_metric": 0.78, "metrics": {"accuracy": 0.78}},
         {"best_metric": 0.83, "metrics": {"accuracy": 0.83}},
@@ -286,32 +353,34 @@ def case_classification_success():
         {"best_metric": 0.89, "metrics": {"accuracy": 0.89}},
         {"best_metric": 0.91, "metrics": {"accuracy": 0.91}},
     ]
-    for i, rd in enumerate(rounds):
-        simulate_round(state, rd)
-        if state["next_action"] in ("generate_report", "completed", "stopped"):
-            # mark remaining rounds as not run
-            for j in range(i + 1, len(rounds)):
-                pass  # not executed
+
+    s = state
+    for rd in rounds:
+        s = simulate_round(s, rd)
+        if s["next_action"] in ("generate_report", "completed", "stopped"):
             break
 
     # Simulate report generation
-    if state["phase"] == "reporting":
-        state["phase"] = "completed"
-        state["next_action"] = "completed"
+    if s["phase"] == "reporting":
+        s["phase"] = "completed"
+        s["next_action"] = "completed"
 
     # ── checks ──
-    c.check("phase=completed", state["phase"] == "completed")
-    c.check("next_action=completed", state["next_action"] == "completed")
-    c.check("stop_reason=target_reached", state.get("stop_reason") == "target_reached")
-    c.check("round=5", state["round"] == 5)
-    c.check("architecture_version=1 (无回溯)", state["architecture_version"] == 1)
-    c.check("best_metrics.accuracy >= 0.90", state.get("best_metrics", {}).get("accuracy", 0) >= 0.90)
-    c.check("search_stage=fine", state.get("search_stage") == "fine")
-    c.check("consecutive_no_improvement < 10 (无死循环)", state.get("consecutive_no_improvement", 0) < 10)
+    c.check("phase=completed", s["phase"] == "completed")
+    c.check("next_action=completed", s["next_action"] == "completed")
+    c.check("stop_reason=target_reached", s.get("stop_reason") == "target_reached")
+    c.check("round=5", s["round"] == 5)
+    c.check("architecture_version=1 (无回溯)", s["architecture_version"] == 1)
+    c.check("best_metrics.accuracy >= 0.90", s.get("best_metrics", {}).get("accuracy", 0) >= 0.90)
+    c.check("search_stage=fine", s.get("search_stage") == "fine")
+    c.check("consecutive_no_improvement < 10", s.get("consecutive_no_improvement", 0) < 10)
 
-    # Validate state.json schema
-    s_ok, s_msg = validate_state_json(state)
-    c.check("state.json 字段合法", s_ok, s_msg)
+    s_ok, s_msg = validate_state_schema(s)
+    c.check("state.schema.json 校验", s_ok, s_msg)
+
+    # Verify pure function: original state was NOT mutated
+    c.check("simulate_round 纯函数: 原始 state 未变异",
+             state["round"] == 0 and state["phase"] == "tuning")
 
     return c
 
@@ -324,48 +393,54 @@ def case_segmentation_architecture_fallback():
         "phase": "tuning", "round": 10, "architecture_version": 1,
         "search_stage": "fine", "best_config_id": "config-015",
         "best_metrics": {"dice": 0.83},
-        "target_expr": "dice >= 0.90", "_target_values": {"dice": 0.90},
+        "target_expr": "dice >= 0.90",
+        "target_conditions": [{"metric": "dice", "operator": ">=", "value": 0.90}],
         "last_action": "analyze_results", "next_action": "check_termination",
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 10, "last_round_best_metric": 0.83,
+        "last_updated": "2026-06-29T12:00:00Z",
     }
 
-    # Termination check should trigger architecture_search
+    # check_termination is pure — original state unchanged
     next_action, stop_reason = check_termination(state)
 
     c.check("路由判定=architecture_search", next_action == "architecture_search")
     c.check("stop_reason=None (非终止)", stop_reason is None)
 
-    # Simulate Step 3 transition
+    # Simulate Step 3 transition (build new state, don't mutate original)
+    s = deepcopy(state)
     if next_action == "architecture_search":
-        state["phase"] = "optimization"
-        state["architecture_version"] += 1
-        state["search_stage"] = None
-        state["next_action"] = "architecture_search"
+        s["phase"] = "optimization"
+        s["architecture_version"] += 1
+        s["search_stage"] = None
+        s["next_action"] = "architecture_search"
 
-    c.check("phase → optimization", state["phase"] == "optimization")
-    c.check("architecture_version → 2", state["architecture_version"] == 2)
+    c.check("phase → optimization", s["phase"] == "optimization")
+    c.check("architecture_version → 2", s["architecture_version"] == 2)
 
     # Simulate Step 3 done → back to Step 2
-    state["phase"] = "tuning"
-    state["round"] = 0
-    state["search_stage"] = "coarse"
-    state["consecutive_no_improvement"] = 0
-    state["next_action"] = "generate_configs"
-    state["last_round_best_metric"] = None
+    s2 = deepcopy(s)
+    s2["phase"] = "tuning"
+    s2["round"] = 0
+    s2["search_stage"] = "coarse"
+    s2["consecutive_no_improvement"] = 0
+    s2["next_action"] = "generate_configs"
+    s2["last_round_best_metric"] = None
 
-    c.check("回到 Step2 后 phase=tuning", state["phase"] == "tuning")
-    c.check("round 归零", state["round"] == 0)
-    c.check("search_stage=coarse", state["search_stage"] == "coarse")
-    c.check("consecutive_no_improvement 归零", state["consecutive_no_improvement"] == 0)
-    c.check("next_action=generate_configs", state["next_action"] == "generate_configs")
-    c.check("architecture_version=2 (已递增)", state["architecture_version"] == 2)
+    c.check("回到 Step2 后 phase=tuning", s2["phase"] == "tuning")
+    c.check("round 归零", s2["round"] == 0)
+    c.check("search_stage=coarse", s2["search_stage"] == "coarse")
+    c.check("consecutive_no_improvement 归零", s2["consecutive_no_improvement"] == 0)
+    c.check("next_action=generate_configs", s2["next_action"] == "generate_configs")
+    c.check("architecture_version=2 (已递增)", s2["architecture_version"] == 2)
+    c.check("stop_reason 仍为 None", s2.get("stop_reason") is None)
 
-    # Should NOT give up
-    c.check("stop_reason 仍为 None", state.get("stop_reason") is None)
+    s_ok, s_msg = validate_state_schema(s2)
+    c.check("state.schema.json 校验", s_ok, s_msg)
 
-    s_ok, s_msg = validate_state_json(state)
-    c.check("state.json 字段合法", s_ok, s_msg)
+    # Pure function verification
+    c.check("check_termination 纯函数: 原始 state 未变异",
+             state["round"] == 10 and state["phase"] == "tuning")
 
     return c
 
@@ -404,22 +479,17 @@ def case_sklearn_lightweight():
     ]
 
     schema_ok, schema_msg = validate_results_schema(results)
-    c.check("results.json schema 校验", schema_ok, schema_msg)
+    c.check("results.schema.json 校验", schema_ok, schema_msg)
 
-    # Field-level checks
     for entry in results:
         for cfg in entry["configs"]:
             cid = cfg["config_id"]
             c.check(f"{cid} completed + error_type=null",
                     cfg["status"] != "completed" or cfg["error_type"] is None)
-            c.check(f"{cid} train_loss=null (sklearn)",
-                    cfg["train_loss"] is None)
-            c.check(f"{cid} val_loss=null (sklearn)",
-                    cfg["val_loss"] is None)
-            c.check(f"{cid} gpu_memory_gb=null (no GPU)",
-                    cfg["gpu_memory_gb"] is None)
-            c.check(f"{cid} params 含 kernel (非 DL 参数)",
-                    "kernel" in cfg.get("params", {}))
+            c.check(f"{cid} train_loss=null (sklearn)", cfg["train_loss"] is None)
+            c.check(f"{cid} val_loss=null (sklearn)", cfg["val_loss"] is None)
+            c.check(f"{cid} gpu_memory_gb=null (no GPU)", cfg["gpu_memory_gb"] is None)
+            c.check(f"{cid} params 含 kernel", "kernel" in cfg.get("params", {}))
             c.check(f"{cid} duration_min > 0", cfg["duration_min"] > 0)
 
     c.check("round_id 从 1 递增",
@@ -432,7 +502,7 @@ def case_sklearn_lightweight():
 
 
 def case_oom_recovery():
-    """OOM → batch_size 减半 → 重试成功, error_type 记录正确"""
+    """OOM → batch_size 减半 → 重试成功, error_type/attempt/retry_of 记录正确"""
     c = CheckResult("oom-recovery")
 
     results = [
@@ -449,9 +519,10 @@ def case_oom_recovery():
                     "gpu_memory_gb": 23.5,
                     "seed": 42, "commit_hash": "abc123",
                     "error_type": "OOM",
+                    "attempt": 1, "retry_of": None,
                 },
                 {
-                    "config_id": "config-001-retry",
+                    "config_id": "config-001",
                     "params": {"learning_rate": 0.001, "batch_size": 16},
                     "metrics": {"accuracy": 0.82},
                     "train_loss": 0.45, "val_loss": 0.50,
@@ -459,6 +530,7 @@ def case_oom_recovery():
                     "gpu_memory_gb": 11.8,
                     "seed": 42, "commit_hash": "abc123",
                     "error_type": None,
+                    "attempt": 2, "retry_of": "config-001",
                 },
                 {
                     "config_id": "config-002",
@@ -469,6 +541,7 @@ def case_oom_recovery():
                     "gpu_memory_gb": 12.1,
                     "seed": 43, "commit_hash": "abc123",
                     "error_type": None,
+                    "attempt": 1, "retry_of": None,
                 },
             ],
             "best_config_id": "config-002",
@@ -477,26 +550,34 @@ def case_oom_recovery():
     ]
 
     schema_ok, schema_msg = validate_results_schema(results)
-    c.check("OOM 场景 results schema 校验", schema_ok, schema_msg)
+    c.check("results.schema.json 校验", schema_ok, schema_msg)
 
     cfg_oom = results[0]["configs"][0]
     cfg_retry = results[0]["configs"][1]
     cfg_normal = results[0]["configs"][2]
 
-    c.check("OOM config: error_type=OOM", cfg_oom["error_type"] == "OOM")
-    c.check("OOM config: status=oom", cfg_oom["status"] == "oom")
-    c.check("OOM config: batch_size=32 (原始值)", cfg_oom["params"]["batch_size"] == 32)
-    c.check("OOM config: duration_min 记录实际运行时长", cfg_oom["duration_min"] > 0)
-    c.check("OOM config: gpu_memory_gb 接近显存上限", cfg_oom["gpu_memory_gb"] > 20)
+    # OOM config
+    c.check("OOM: error_type=OOM", cfg_oom["error_type"] == "OOM")
+    c.check("OOM: status=oom", cfg_oom["status"] == "oom")
+    c.check("OOM: batch_size=32 (原始值)", cfg_oom["params"]["batch_size"] == 32)
+    c.check("OOM: duration_min 记录实际运行时长", cfg_oom["duration_min"] > 0)
+    c.check("OOM: gpu_memory_gb 接近显存上限", cfg_oom["gpu_memory_gb"] > 20)
+    c.check("OOM: attempt=1", cfg_oom.get("attempt") == 1)
+    c.check("OOM: retry_of=None", cfg_oom.get("retry_of") is None)
 
-    c.check("重试 config: batch_size=16 (减半)", cfg_retry["params"]["batch_size"] == 16)
-    c.check("重试 config: completed + error_type=null",
+    # Retry config
+    c.check("重试: batch_size=16 (减半)", cfg_retry["params"]["batch_size"] == 16)
+    c.check("重试: completed + error_type=null",
              cfg_retry["status"] == "completed" and cfg_retry["error_type"] is None)
-    c.check("重试 config: seed 与原始一致 (可复现)", cfg_retry["seed"] == cfg_oom["seed"])
-    c.check("重试 config: gpu_memory 下降 (23.5→11.8)",
+    c.check("重试: seed 与原始一致 (可复现)", cfg_retry["seed"] == cfg_oom["seed"])
+    c.check("重试: gpu_memory 下降 (23.5→11.8)",
              cfg_retry["gpu_memory_gb"] < cfg_oom["gpu_memory_gb"])
+    c.check("重试: metrics 非空 (completed)", len(cfg_retry["metrics"]) >= 1)
+    c.check("重试: attempt=2", cfg_retry.get("attempt") == 2)
+    c.check("重试: retry_of 指向 config-001", cfg_retry.get("retry_of") == "config-001")
 
-    c.check("正常 config: completed + error_type=null",
+    # Normal config
+    c.check("正常: completed + error_type=null",
              cfg_normal["status"] == "completed" and cfg_normal["error_type"] is None)
     c.check("best_config_id 指向正常 config (非 retry)",
              results[0]["best_config_id"] == "config-002")
@@ -513,65 +594,119 @@ def case_early_target_reached():
         "search_stage": "coarse", "best_config_id": "config-003",
         "best_metrics": {"dice_lv": 0.92, "dice_rv": 0.91},
         "target_expr": "dice_lv >= 0.90 AND dice_rv >= 0.90",
-        "_target_values": {"dice_lv": 0.90, "dice_rv": 0.90},
+        "target_conditions": [
+            {"metric": "dice_lv", "operator": ">=", "value": 0.90},
+            {"metric": "dice_rv", "operator": ">=", "value": 0.90},
+        ],
         "last_action": "analyze_results", "next_action": "check_termination",
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 0, "last_round_best_metric": 0.915,
+        "last_updated": "2026-06-29T12:00:00Z",
     }
 
+    # check_termination is pure
     next_action, stop_reason = check_termination(state)
 
     c.check("next_action=generate_report (达标)", next_action == "generate_report")
     c.check("stop_reason=target_reached", stop_reason == "target_reached")
 
-    # Simulate report generation
-    state["phase"] = "completed"
-    state["next_action"] = "completed"
-    state["stop_reason"] = "target_reached"
+    # Simulate report generation (new state)
+    s = deepcopy(state)
+    s["phase"] = "completed"
+    s["next_action"] = "completed"
+    s["stop_reason"] = "target_reached"
 
-    c.check("phase=completed", state["phase"] == "completed")
-    c.check("round=1 (未额外递增)", state["round"] == 1)
-    c.check("architecture_version=1", state["architecture_version"] == 1)
+    c.check("phase=completed", s["phase"] == "completed")
+    c.check("round=1 (未额外递增)", s["round"] == 1)
+    c.check("architecture_version=1", s["architecture_version"] == 1)
     c.check("未触发 architecture backtrack (轮次少)",
-             state.get("consecutive_no_improvement", 0) < 10)
+             s.get("consecutive_no_improvement", 0) < 10)
     c.check("best_metrics.dice_lv >= 0.90",
-             state.get("best_metrics", {}).get("dice_lv", 0) >= 0.90)
+             s.get("best_metrics", {}).get("dice_lv", 0) >= 0.90)
 
-    s_ok, s_msg = validate_state_json(state)
-    c.check("state.json 字段合法", s_ok, s_msg)
+    s_ok, s_msg = validate_state_schema(s)
+    c.check("state.schema.json 校验", s_ok, s_msg)
+
+    # Verify check_termination is pure
+    c.check("check_termination 纯函数: 原始 state 未变异",
+             state["phase"] == "tuning" and state["next_action"] == "check_termination")
 
     return c
 
 
 def case_no_auto_relax_target():
-    """禁止自动放宽目标: 3 次熔断后 target_expr 不变"""
+    """
+    禁止自动放宽目标: handle_quality_meltdown 被调用后 target_expr 不变。
+    此测试调用真实的 handle_quality_meltdown() 逻辑，而非模拟设置 retry_count。
+    """
     c = CheckResult("no-auto-relax-target")
 
+    # ── Scenario: 3 consecutive meltdowns ──
     state = {
         "phase": "tuning", "round": 15, "architecture_version": 1,
         "search_stage": "fine", "best_config_id": "config-020",
         "best_metrics": {"dice": 0.83},
-        "target_expr": "dice >= 0.90", "_target_values": {"dice": 0.90},
+        "target_expr": "dice >= 0.90",
+        "target_conditions": [{"metric": "dice", "operator": ">=", "value": 0.90}],
         "last_action": "analyze_results", "next_action": "check_termination",
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 3, "last_round_best_metric": 0.83,
+        "last_updated": "2026-06-29T14:00:00Z",
     }
 
-    original_target = state["target_expr"]
-    original_values = dict(state["_target_values"])
+    original_expr = state["target_expr"]
+    original_conditions = deepcopy(state["target_conditions"])
 
-    # Simulate 3 meltdowns — target_expr must NOT change
-    for meltdown_num in range(1, 4):
-        state["retry_count"] = meltdown_num
-        c.check(f"第 {meltdown_num} 次熔断后 target_expr 不变",
-                 state["target_expr"] == original_target)
-        c.check(f"第 {meltdown_num} 次熔断后 target_values 不变",
-                 state["_target_values"] == original_values)
+    # Meltdown 1: change strategy, target unchanged
+    s1, needs_input = handle_quality_meltdown(state)
+    c.check("1st meltdown: target_expr 不变", s1["target_expr"] == original_expr)
+    c.check("1st meltdown: target_conditions 不变",
+             s1["target_conditions"] == original_conditions)
+    c.check("1st meltdown: retry_count=1", s1["retry_count"] == 1)
+    c.check("1st meltdown: next_action=generate_configs",
+             s1["next_action"] == "generate_configs")
+    c.check("1st meltdown: 不需用户输入", not needs_input)
 
-    # After 3rd meltdown, should stop, but target still unchanged
-    c.check("3 次熔断后 target_expr 仍不变", state["target_expr"] == original_target)
-    c.check("3 次熔断后 target_values 不变",
-             state["_target_values"] == original_values)
+    # Meltdown 2: should ask user, NOT auto-relax
+    s2, needs_input = handle_quality_meltdown(s1)
+    c.check("2nd meltdown: target_expr 不变", s2["target_expr"] == original_expr)
+    c.check("2nd meltdown: target_conditions 不变",
+             s2["target_conditions"] == original_conditions)
+    c.check("2nd meltdown: retry_count=2", s2["retry_count"] == 2)
+    c.check("2nd meltdown: next_action=waiting_user", s2["next_action"] == "waiting_user")
+    c.check("2nd meltdown: 需要用户输入", needs_input)
+
+    # Meltdown 2 resolved: user rejects → continue with same target
+    s2_reject, _ = handle_quality_meltdown(state, user_response="reject")
+    c.check("2nd meltdown reject: target_expr 仍不变",
+             s2_reject["target_expr"] == original_expr)
+    c.check("2nd meltdown reject: next_action=generate_configs",
+             s2_reject["next_action"] == "generate_configs")
+
+    # Meltdown 2 resolved: user timeout → same as reject
+    s2_timeout, _ = handle_quality_meltdown(state, user_response="timeout")
+    c.check("2nd meltdown timeout: target_expr 仍不变",
+             s2_timeout["target_expr"] == original_expr)
+
+    # Meltdown 3: stop
+    s3, needs_input = handle_quality_meltdown(s2)
+    c.check("3rd meltdown: target_expr 仍不变", s3["target_expr"] == original_expr)
+    c.check("3rd meltdown: target_conditions 不变",
+             s3["target_conditions"] == original_conditions)
+    c.check("3rd meltdown: phase=stopped", s3["phase"] == "stopped")
+    c.check("3rd meltdown: next_action=generate_report",
+             s3["next_action"] == "generate_report")
+    c.check("3rd meltdown: stop_reason=quality_meltdown",
+             s3["stop_reason"] == "quality_meltdown")
+    c.check("3rd meltdown: 不需用户输入", not needs_input)
+
+    # Final: all meltdowns done, target_conditions still original
+    c.check("最终 target_conditions 不变", s3["target_conditions"] == original_conditions)
+    c.check("最终 target_expr 不变", s3["target_expr"] == original_expr)
+
+    # Pure function verification: original state unchanged
+    c.check("handle_quality_meltdown 纯函数: 原始 state 未变异",
+             state["retry_count"] == 0 and state["phase"] == "tuning")
 
     return c
 
@@ -580,15 +715,19 @@ def case_no_auto_relax_target():
 #  Main
 # ═══════════════════════════════════════════════════════════════════
 
+CASE_REGISTRY = [
+    # (case_id, display_name, runner)  — case_id matches evals.json
+    ("classification-success",          "Classification Normal",      case_classification_success),
+    ("segmentation-architecture-fallback", "Architecture Fallback",   case_segmentation_architecture_fallback),
+    ("sklearn-lightweight",             "Sklearn Lightweight",        case_sklearn_lightweight),
+    ("oom-recovery",                    "OOM Recovery",              case_oom_recovery),
+    ("early-target-reached",            "Early Target Reached",      case_early_target_reached),
+    ("no-auto-relax-target",            "No Auto-Relax Target",     case_no_auto_relax_target),
+]
+
+
 def main():
-    all_cases = [
-        ("Classification Normal", case_classification_success),
-        ("Architecture Fallback", case_segmentation_architecture_fallback),
-        ("Sklearn Lightweight", case_sklearn_lightweight),
-        ("OOM Recovery", case_oom_recovery),
-        ("Early Target Reached", case_early_target_reached),
-        ("No Auto-Relax Target", case_no_auto_relax_target),
-    ]
+    global CI_MODE
 
     filter_pattern = None
     verbose = False
@@ -596,28 +735,28 @@ def main():
     for arg in sys.argv[1:]:
         if arg == "-v":
             verbose = True
+        elif arg == "--ci":
+            CI_MODE = True
         elif arg.startswith("--case="):
-            filter_pattern = arg.split("=", 1)[1].lower()
-        elif arg.startswith("--filter="):
             filter_pattern = arg.split("=", 1)[1].lower()
 
     total_passed = 0
     total_failed = 0
     all_results = {}
 
-    print(f"\n  Auto-Tuner Evals  |  {RESULTS_SCHEMA_PATH.name}")
-    print(f"  {'jsonschema: OK' if HAS_JSONSCHEMA else 'jsonschema: NOT INSTALLED (pip install jsonschema)'}")
+    print()
+    print(f"  Auto-Tuner Evals  |  --ci={'ON' if CI_MODE else 'OFF'}")
+    print(f"  jsonschema: {'OK' if HAS_JSONSCHEMA else 'NOT INSTALLED (pip install jsonschema)'}")
     print()
 
-    for name, runner in all_cases:
-        case_id = name.lower().replace(" ", "-")
-        if filter_pattern and filter_pattern not in case_id:
+    for case_id, display_name, runner in CASE_REGISTRY:
+        if filter_pattern and filter_pattern not in case_id and filter_pattern not in display_name.lower():
             continue
 
         try:
             r = runner()
         except Exception as e:
-            print(f"  [{FAIL}] {name}: exception — {e}")
+            print(f"  [{FAIL}] {display_name}: exception — {e}")
             traceback.print_exc()
             total_failed += 1
             continue
@@ -637,11 +776,12 @@ def main():
 
         if verbose:
             for status, desc, detail in r.checks:
-                symbol_v = {"PASS": "[OK]", "FAIL": "[XX]", "SKIP": "[--]"}.get(status, "?")
+                sym_map = {"PASS": "[OK]", "FAIL": "[XX]", "SKIP": "[--]"}
+                sym_v = sym_map.get(status, "?")
                 detail_str = f"  {detail}" if detail else ""
-                print(f"      {symbol_v} {desc}{detail_str}")
+                print(f"      {sym_v} {desc}{detail_str}")
 
-    # Summary (total_failed was already counted; skipped not counted against)
+    # Summary
     total = total_passed + total_failed
     total_skipped = sum(r.skipped for r in all_results.values())
     print()
