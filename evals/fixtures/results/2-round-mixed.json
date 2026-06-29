@@ -1,0 +1,50 @@
+[
+  {
+    "round_id": 1,
+    "timestamp": "2026-06-29T10:00:00Z",
+    "configs": [
+      {
+        "config_id": "config-001",
+        "params": {"learning_rate": 0.001, "batch_size": 16, "weight_decay": 0.0001},
+        "metrics": {"accuracy": 0.82, "f1": 0.80},
+        "train_loss": 0.32, "val_loss": 0.35,
+        "status": "completed", "duration_min": 30,
+        "gpu_memory_gb": 4.5, "seed": 42, "commit_hash": "abc123", "error_type": null
+      },
+      {
+        "config_id": "config-002",
+        "params": {"learning_rate": 0.0005, "batch_size": 16, "weight_decay": 0.0001},
+        "metrics": {"accuracy": 0.85, "f1": 0.84},
+        "train_loss": 0.28, "val_loss": 0.31,
+        "status": "completed", "duration_min": 30,
+        "gpu_memory_gb": 4.5, "seed": 43, "commit_hash": "abc123", "error_type": null
+      }
+    ],
+    "best_config_id": "config-002",
+    "resource_usage": {"parallel_count": 2, "gpu_utilization": "65%"}
+  },
+  {
+    "round_id": 2,
+    "timestamp": "2026-06-29T11:00:00Z",
+    "configs": [
+      {
+        "config_id": "config-003",
+        "params": {"learning_rate": 0.0005, "batch_size": 32, "weight_decay": 0.001},
+        "metrics": {"accuracy": 0.83, "f1": 0.81},
+        "train_loss": 0.30, "val_loss": 0.33,
+        "status": "completed", "duration_min": 55,
+        "gpu_memory_gb": 8.2, "seed": 44, "commit_hash": "abc123", "error_type": null
+      },
+      {
+        "config_id": "config-004",
+        "params": {"learning_rate": 0.0005, "batch_size": 16, "weight_decay": 0.0005},
+        "metrics": {"accuracy": 0.87, "f1": 0.86},
+        "train_loss": 0.25, "val_loss": 0.28,
+        "status": "completed", "duration_min": 30,
+        "gpu_memory_gb": 4.6, "seed": 45, "commit_hash": "abc123", "error_type": null
+      }
+    ],
+    "best_config_id": "config-004",
+    "resource_usage": {"parallel_count": 2, "gpu_utilization": "70%"}
+  }
+]

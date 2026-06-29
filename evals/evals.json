@@ -1,59 +1,71 @@
 {
-  "skill_name": "auto-tuner",
-  "evals": [
+  "schema_version": 1,
+  "description": "Auto-Tuner Skill — 状态机与文件契约回归测试",
+  "scenarios": [
     {
-      "id": 0,
-      "prompt": "帮我调参，项目在 E:/project/segmentation/ 下，数据在 D:/datasets/cardiac_ct/，目标是心脏分割 dice >= 0.9",
-      "expected_output": "Agent 应该：1) 先确认工作区 E:/project/segmentation/；2) 列出目录内容让用户确认；3) 发现数据在外部目录 D:/datasets/cardiac_ct/，询问是否一并配置权限；4) 通过 update-config 配置两个目录的完整权限；5) 确认权限配置完成后再进入阶段一",
-      "files": []
+      "id": "classification-success",
+      "description": "正常调参全流程: planning → coarse → fine → target_reached → report → completed",
+      "priority": 1,
+      "target": [
+        "state_machine",
+        "schema",
+        "termination",
+        "search_stage"
+      ]
     },
     {
-      "id": 1,
-      "prompt": "我有一个点云体素化的项目，代码在 /project/voxelization/ 下，用 PyTorch 写的。现在跑出来的 dice 只有 0.75 左右，我需要所有心脏部位（左心室、右心室、心肌）的 dice 都 >= 0.9。帮我调参，代码能跑通，就是效果不好。显卡是 RTX 3090 24GB。",
-      "expected_output": "Agent 应该：1) 先读代码理解项目结构；2) 进行头脑风暴列出调参策略；3) 列出可调参数和建议范围；4) 定义达标标准；5) 设计并行调参方案；6) 开始第一轮调参并记录结果",
-      "files": []
+      "id": "segmentation-architecture-fallback",
+      "description": "架构回溯: 连续 10 轮无提升 → architecture_version+1 → round 归零",
+      "priority": 1,
+      "target": [
+        "state_machine",
+        "architecture_version",
+        "round_reset"
+      ]
     },
     {
-      "id": 2,
-      "prompt": "我在做一个图像去噪的任务，用的是一个简单的 U-Net。目前 PSNR 只有 25dB，我想达到 30dB 以上。代码是 train.py，配置在 config.yaml 里。我有两块 RTX 4090，帮我自动化调参。",
-      "expected_output": "Agent 应该：1) 读取 train.py 和 config.yaml；2) 识别出 config.yaml 中的可调参数；3) 设计调参方案（利用双 GPU）；4) 用不同参数并行跑实验；5) 迭代优化直到 PSNR >= 30",
-      "files": []
+      "id": "sklearn-lightweight",
+      "description": "轻量实验: 无 GPU/loss、Bash 并行、results 字段合规",
+      "priority": 1,
+      "target": [
+        "schema",
+        "cross_framework"
+      ]
     },
     {
-      "id": 3,
-      "prompt": "我有一个传统机器学习项目，用 scikit-learn 做分类。数据是 CSV 格式的表格数据，目标是分 5 类。现在 accuracy 只有 0.65，老板要求至少 0.85。代码在 ml_pipeline.py 里，帮我搞定。",
-      "expected_output": "Agent 应该：1) 读代码理解 pipeline；2) 识别可调参数（模型选择、超参、特征工程参数等）；3) 设计调参策略（可能用 grid search 或 random search）；4) 并行跑多组实验；5) 迭代优化到 accuracy >= 0.85",
-      "files": []
+      "id": "oom-recovery",
+      "description": "OOM 恢复: config OOM → batch_size 减半 → 重试, error_type 记录正确",
+      "priority": 1,
+      "target": [
+        "schema",
+        "error_type",
+        "retry"
+      ]
     },
     {
-      "id": 4,
-      "prompt": "调参跑到第 8 轮了，dice 一直卡在 0.85 不动，连续 5 轮没有提升。目标是 0.92。项目是医学图像分割，用的 nnUNet。",
-      "expected_output": "Agent 应该：1) 检测到连续多轮无提升，触发架构回溯条件；2) 存档当前最优代码；3) 分析 loss 曲线诊断瓶颈；4) spawn 子 agent 搜索同类任务的解决方案；5) 自我辩论选最优方案；6) 执行架构修改后回到调参循环",
-      "files": []
+      "id": "early-target-reached",
+      "description": "达标即停: Round 1 达标 → 直接 report, round 不递增",
+      "priority": 1,
+      "target": [
+        "state_machine",
+        "termination",
+        "early_stop"
+      ]
     },
     {
-      "id": 5,
-      "prompt": "我的项目已经调了 40 多轮了，三种架构都试过了，最好的 dice 只有 0.82，目标是 0.95。感觉达不到了，但是 agent 一直不停怎么办？",
-      "expected_output": "Agent 应该：1) 检查放弃条件（架构穷尽、总轮数上限、长期停滞）；2) 如果满足条件，自动停止并生成放弃报告；3) 报告中说明已尝试方案、各方案最佳指标、放弃原因分析",
-      "files": []
-    },
-    {
-      "id": 6,
-      "prompt": "训练跑着跑着 OOM 了，RTX 3090 24GB 的显存不够用。batch_size 已经设成 4 了，再小就没法训了。",
-      "expected_output": "Agent 应该：1) 检测到 OOM 错误；2) 自动降低 batch_size 50% 重试；3) 如果仍 OOM，考虑减小模型或使用梯度累积；4) 如果并行路数过多，减少并行数；5) 记录到 decision_log.md",
-      "files": []
-    },
-    {
-      "id": 7,
-      "prompt": "帮我调参，train.py 跑不起来，报 ModuleNotFoundError: No module named 'monai'",
-      "expected_output": "Agent 应该：1) 识别 ModuleNotFoundError；2) 自动 pip install monai；3) 重新运行 baseline；4) 如果还有其他缺失依赖，继续安装；5) 记录修复过程到 decision_log.md；6) 最多自动修复 3 次",
-      "files": []
-    },
-    {
-      "id": 8,
-      "prompt": "项目在 /project/ 下，已经跑了几轮调参了，experiment/ 目录里有之前的结果。我想继续调，上次是因为网络断了中断的。",
-      "expected_output": "Agent 应该：1) 读取最近的 checkpoint-phase{N}.md；2) 读取 checkpoint 之后的所有 delta-step{N}.md；3) 合并状态确定当前进度；4) 从断点继续执行调参循环",
-      "files": []
+      "id": "no-auto-relax-target",
+      "description": "禁止自动放宽目标: 3 次熔断后 target_expr 不变",
+      "priority": 1,
+      "target": [
+        "quality_meltdown",
+        "conservative"
+      ]
     }
-  ]
+  ],
+  "last_run": "2026-06-29T22:00:00Z",
+  "last_result": {
+    "passed": 63,
+    "skipped": 2,
+    "failed": 0
+  }
 }

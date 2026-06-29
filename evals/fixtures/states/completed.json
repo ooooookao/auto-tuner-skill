@@ -1,0 +1,16 @@
+{
+  "phase": "completed",
+  "round": 8,
+  "architecture_version": 1,
+  "search_stage": "fine",
+  "best_config_id": "config-023",
+  "best_metrics": {"dice": 0.91, "loss": 0.08},
+  "target_expr": "dice >= 0.90",
+  "last_action": "generate_report",
+  "next_action": "completed",
+  "stop_reason": "target_reached",
+  "retry_count": 0,
+  "consecutive_no_improvement": 2,
+  "last_round_best_metric": 0.91,
+  "last_updated": "2026-06-29T12:00:00Z"
+}

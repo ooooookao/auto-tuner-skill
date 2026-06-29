@@ -1,0 +1,16 @@
+{
+  "phase": "tuning",
+  "round": 0,
+  "architecture_version": 1,
+  "search_stage": "coarse",
+  "best_config_id": null,
+  "best_metrics": {},
+  "target_expr": "dice >= 0.90",
+  "last_action": null,
+  "next_action": "generate_configs",
+  "stop_reason": null,
+  "retry_count": 0,
+  "consecutive_no_improvement": 0,
+  "last_round_best_metric": null,
+  "last_updated": "2026-06-29T00:00:00Z"
+}
