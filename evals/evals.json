@@ -60,11 +60,21 @@
         "quality_meltdown",
         "conservative"
       ]
+    },
+    {
+      "id": "stagnation-continuous-improvement",
+      "description": "回归测试: 15 轮持续提升不触发 stagnated（防 round_num 误判）",
+      "priority": 1,
+      "target": [
+        "state_machine",
+        "termination",
+        "regression"
+      ]
     }
   ],
-  "last_run": "2026-06-29T23:00:00Z",
+  "last_run": "2026-06-29T23:45:00Z",
   "last_result": {
-    "passed": 82,
+    "passed": 90,
     "skipped": 5,
     "failed": 0
   }

@@ -141,6 +141,20 @@ def compute_worst_distance(state):
     return max(distances) if distances else 0.0
 
 
+def is_metric_better(new_val, old_val, operator=">="):
+    """
+    Compare two metric values respecting the target operator direction.
+    For ">=" (higher is better): returns True if new > old.
+    For "<=" (lower is better): returns True if new < old.
+    Always returns False when values are equal (no regression is not improvement).
+    """
+    if operator == ">=":
+        return new_val > old_val
+    elif operator == "<=":
+        return new_val < old_val
+    return new_val > old_val  # fallback
+
+
 def check_termination(state):
     """
     Step 2.5 termination routing.
@@ -159,7 +173,7 @@ def check_termination(state):
         return "generate_report", "too_many_architectures"
     if round_num >= 50:
         return "generate_report", "too_many_rounds"
-    if round_num >= 15 and distance > 0.05:
+    if consecutive >= 15 and distance > 0.05:
         return "generate_report", "stagnated"
 
     # 3. Architecture backtrack: consecutive 10+ rounds no improvement
@@ -200,11 +214,13 @@ def simulate_round(state, round_metrics):
             for cond in conditions:
                 old_val = current_best.get(cond["metric"])
                 new_val = new_metrics.get(cond["metric"])
-                if new_val is not None and (old_val is None or new_val > old_val):
+                if new_val is not None and (old_val is None or is_metric_better(new_val, old_val, cond["operator"])):
                     new_is_better = True
                     break
             if not new_is_better:
-                new_is_better = new_primary > (prev_primary or 0)
+                # Fallback: derive operator from first target condition
+                primary_op = conditions[0]["operator"] if conditions else ">="
+                new_is_better = is_metric_better(new_primary, prev_primary, primary_op)
 
     if new_is_better:
         new_state["best_metrics"] = new_metrics
@@ -242,47 +258,52 @@ def simulate_round(state, round_metrics):
     return new_state
 
 
-def handle_quality_meltdown(state, user_response=None):
+def trigger_quality_meltdown(state):
     """
-    Pure function: implements failure-recovery.md quality meltdown rules.
+    Pure function: first half of quality meltdown protocol.
+    Increments retry_count and returns routing decision.
+    NEVER modifies target_expr or target_conditions.
+
     Returns (new_state, requires_user_input: bool).
 
-    user_response=None → no input yet (meltdown just triggered)
-    user_response="reject" | "timeout" → continue without changing target
-    user_response="confirm" → user explicitly accepted new target
+    retry_count=1 → change strategy, continue
+    retry_count=2 → wait for user
+    retry_count>=3 → stop
     """
     new_state = deepcopy(state)
-    meltdown_count = new_state.get("retry_count", 0) + 1
-    new_state["retry_count"] = meltdown_count
+    new_state["retry_count"] += 1
+    mc = new_state["retry_count"]
 
-    if meltdown_count == 1:
-        # 第 1 次熔断 → 换调参策略重试，目标不变
+    if mc == 1:
         new_state["next_action"] = "generate_configs"
         new_state["last_action"] = "quality_meltdown_1"
         return new_state, False
 
-    if meltdown_count == 2:
-        # 第 2 次熔断 → 请求用户确认，绝不自动修改 target_expr / target_conditions
-        if user_response == "confirm":
-            # 用户主动设置了新目标 → 新目标已经在 state 中，保留
-            new_state["next_action"] = "generate_configs"
-        elif user_response in ("reject", "timeout"):
-            # 用户拒绝或超时 → 原目标不变，继续尝试
-            new_state["next_action"] = "generate_configs"
-        else:
-            # 等待用户输入
-            new_state["next_action"] = "waiting_user"
-            new_state["last_action"] = "quality_meltdown_2_waiting"
-            return new_state, True
-        new_state["last_action"] = "quality_meltdown_2_resolved"
-        return new_state, False
+    if mc == 2:
+        new_state["next_action"] = "waiting_user"
+        new_state["last_action"] = "quality_meltdown_2_waiting"
+        return new_state, True
 
-    # meltdown_count >= 3
-    # 第 3 次熔断 → 停止
+    # mc >= 3
     new_state["phase"] = "stopped"
     new_state["next_action"] = "generate_report"
     new_state["stop_reason"] = "quality_meltdown"
     new_state["last_action"] = "quality_meltdown_3"
+    return new_state, False
+
+
+def resolve_quality_meltdown(state, response):
+    """
+    Pure function: handle user response after meltdown count=2.
+    Does NOT increment retry_count — only sets routing.
+    """
+    new_state = deepcopy(state)
+    if response in ("reject", "timeout"):
+        new_state["next_action"] = "generate_configs"
+    elif response == "confirm":
+        # User explicitly set new targets in state
+        new_state["next_action"] = "generate_configs"
+    new_state["last_action"] = "quality_meltdown_2_resolved"
     return new_state, False
 
 
@@ -636,8 +657,8 @@ def case_early_target_reached():
 
 def case_no_auto_relax_target():
     """
-    禁止自动放宽目标: handle_quality_meltdown 被调用后 target_expr 不变。
-    此测试调用真实的 handle_quality_meltdown() 逻辑，而非模拟设置 retry_count。
+    禁止自动放宽目标: trigger_quality_meltdown + resolve_quality_meltdown 不修改 target。
+    使用 trigger→trigger→resolve→trigger 路径验证 retry_count 正确递增。
     """
     c = CheckResult("no-auto-relax-target")
 
@@ -657,56 +678,102 @@ def case_no_auto_relax_target():
     original_expr = state["target_expr"]
     original_conditions = deepcopy(state["target_conditions"])
 
-    # Meltdown 1: change strategy, target unchanged
-    s1, needs_input = handle_quality_meltdown(state)
-    c.check("1st meltdown: target_expr 不变", s1["target_expr"] == original_expr)
-    c.check("1st meltdown: target_conditions 不变",
+    # ── Phase 1: trigger (retry_count 0→1) — change strategy ──
+    s1, needs_input = trigger_quality_meltdown(state)
+    c.check("1st trigger: target_expr 不变", s1["target_expr"] == original_expr)
+    c.check("1st trigger: target_conditions 不变",
              s1["target_conditions"] == original_conditions)
-    c.check("1st meltdown: retry_count=1", s1["retry_count"] == 1)
-    c.check("1st meltdown: next_action=generate_configs",
+    c.check("1st trigger: retry_count=1", s1["retry_count"] == 1)
+    c.check("1st trigger: next_action=generate_configs",
              s1["next_action"] == "generate_configs")
-    c.check("1st meltdown: 不需用户输入", not needs_input)
+    c.check("1st trigger: 不需用户输入", not needs_input)
 
-    # Meltdown 2: should ask user, NOT auto-relax
-    s2, needs_input = handle_quality_meltdown(s1)
-    c.check("2nd meltdown: target_expr 不变", s2["target_expr"] == original_expr)
-    c.check("2nd meltdown: target_conditions 不变",
+    # ── Phase 2: trigger again (retry_count 1→2) — wait for user ──
+    s2, needs_input = trigger_quality_meltdown(s1)
+    c.check("2nd trigger: target_expr 不变", s2["target_expr"] == original_expr)
+    c.check("2nd trigger: target_conditions 不变",
              s2["target_conditions"] == original_conditions)
-    c.check("2nd meltdown: retry_count=2", s2["retry_count"] == 2)
-    c.check("2nd meltdown: next_action=waiting_user", s2["next_action"] == "waiting_user")
-    c.check("2nd meltdown: 需要用户输入", needs_input)
+    c.check("2nd trigger: retry_count=2", s2["retry_count"] == 2)
+    c.check("2nd trigger: next_action=waiting_user", s2["next_action"] == "waiting_user")
+    c.check("2nd trigger: 需要用户输入", needs_input)
 
-    # Meltdown 2 resolved: user rejects → continue with same target
-    s2_reject, _ = handle_quality_meltdown(state, user_response="reject")
-    c.check("2nd meltdown reject: target_expr 仍不变",
-             s2_reject["target_expr"] == original_expr)
-    c.check("2nd meltdown reject: next_action=generate_configs",
-             s2_reject["next_action"] == "generate_configs")
+    # ── Resolve: user rejects — resolve does NOT increment retry_count ──
+    s2_resolved, _ = resolve_quality_meltdown(s2, "reject")
+    c.check("resolve reject: target_expr 仍不变",
+             s2_resolved["target_expr"] == original_expr)
+    c.check("resolve reject: next_action=generate_configs",
+             s2_resolved["next_action"] == "generate_configs")
+    c.check("resolve reject: retry_count 未变 (仍为2)",
+             s2_resolved["retry_count"] == 2)
 
-    # Meltdown 2 resolved: user timeout → same as reject
-    s2_timeout, _ = handle_quality_meltdown(state, user_response="timeout")
-    c.check("2nd meltdown timeout: target_expr 仍不变",
+    # Resolve timeout → same as reject
+    s2_timeout, _ = resolve_quality_meltdown(s2, "timeout")
+    c.check("resolve timeout: target_expr 仍不变",
              s2_timeout["target_expr"] == original_expr)
+    c.check("resolve timeout: retry_count 未变 (仍为2)",
+             s2_timeout["retry_count"] == 2)
 
-    # Meltdown 3: stop
-    s3, needs_input = handle_quality_meltdown(s2)
-    c.check("3rd meltdown: target_expr 仍不变", s3["target_expr"] == original_expr)
-    c.check("3rd meltdown: target_conditions 不变",
+    # ── Phase 3: trigger third time (retry_count 2→3) — stop ──
+    s3, needs_input = trigger_quality_meltdown(s2_resolved)
+    c.check("3rd trigger: target_expr 仍不变", s3["target_expr"] == original_expr)
+    c.check("3rd trigger: target_conditions 不变",
              s3["target_conditions"] == original_conditions)
-    c.check("3rd meltdown: phase=stopped", s3["phase"] == "stopped")
-    c.check("3rd meltdown: next_action=generate_report",
+    c.check("3rd trigger: retry_count=3", s3["retry_count"] == 3)
+    c.check("3rd trigger: phase=stopped", s3["phase"] == "stopped")
+    c.check("3rd trigger: next_action=generate_report",
              s3["next_action"] == "generate_report")
-    c.check("3rd meltdown: stop_reason=quality_meltdown",
+    c.check("3rd trigger: stop_reason=quality_meltdown",
              s3["stop_reason"] == "quality_meltdown")
-    c.check("3rd meltdown: 不需用户输入", not needs_input)
+    c.check("3rd trigger: 不需用户输入", not needs_input)
 
     # Final: all meltdowns done, target_conditions still original
     c.check("最终 target_conditions 不变", s3["target_conditions"] == original_conditions)
     c.check("最终 target_expr 不变", s3["target_expr"] == original_expr)
 
     # Pure function verification: original state unchanged
-    c.check("handle_quality_meltdown 纯函数: 原始 state 未变异",
+    c.check("trigger_quality_meltdown 纯函数: 原始 state 未变异",
              state["retry_count"] == 0 and state["phase"] == "tuning")
+
+    return c
+
+
+def case_stagnation_continuous_improvement():
+    """
+    回归测试: 15 轮持续提升但不达标 → 不得 stagnated。
+    旧逻辑 round_num >= 15 会误判，应改为 consecutive_no_improvement >= 15。
+    """
+    c = CheckResult("stagnation-continuous-improvement")
+
+    state = {
+        "phase": "tuning", "round": 0, "architecture_version": 1,
+        "search_stage": "coarse", "best_config_id": None,
+        "best_metrics": {}, "target_expr": "accuracy >= 0.90",
+        "target_conditions": [{"metric": "accuracy", "operator": ">=", "value": 0.90}],
+        "last_action": None, "next_action": "generate_configs",
+        "stop_reason": None, "retry_count": 0,
+        "consecutive_no_improvement": 0, "last_round_best_metric": None,
+        "last_updated": "2026-06-29T00:00:00Z",
+    }
+
+    s = state
+    for i in range(15):
+        # Each round improves by 0.01 (beyond the 0.005 threshold)
+        metric = 0.70 + (i * 0.01)
+        s = simulate_round(s, {"best_metric": metric, "metrics": {"accuracy": metric}})
+        if s["phase"] == "reporting":
+            break
+
+    c.check("phase != stopped (15轮连续提升不中断)", s["phase"] != "stopped")
+    c.check("stop_reason != stagnated", s.get("stop_reason") != "stagnated")
+    c.check("round >= 15", s["round"] >= 15)
+
+    if s["phase"] != "reporting":
+        c.check("consecutive_no_improvement == 0 (每轮提升)",
+                 s.get("consecutive_no_improvement", -1) == 0)
+
+    # Pure function verification
+    c.check("simulate_round 纯函数: 原始 state 未变异",
+             state["round"] == 0 and state["phase"] == "tuning")
 
     return c
 
@@ -723,6 +790,7 @@ CASE_REGISTRY = [
     ("oom-recovery",                    "OOM Recovery",              case_oom_recovery),
     ("early-target-reached",            "Early Target Reached",      case_early_target_reached),
     ("no-auto-relax-target",            "No Auto-Relax Target",     case_no_auto_relax_target),
+    ("stagnation-continuous-improvement", "Stagnation Regression",  case_stagnation_continuous_improvement),
 ]
 
 

@@ -11,6 +11,7 @@
     "best_config_id",
     "best_metrics",
     "target_expr",
+    "target_conditions",
     "last_action",
     "next_action",
     "stop_reason",
@@ -51,6 +52,19 @@
     "target_expr": {
       "type": "string",
       "description": "达标条件表达式，如 \"dice >= 0.90 AND loss <= 0.10\""
+    },
+    "target_conditions": {
+      "type": "array",
+      "description": "结构化达标条件，供机器精确判达标",
+      "items": {
+        "type": "object",
+        "required": ["metric", "operator", "value"],
+        "properties": {
+          "metric": { "type": "string", "description": "指标名" },
+          "operator": { "type": "string", "enum": [">=", "<="], "description": "比较运算符" },
+          "value": { "type": "number", "description": "目标值" }
+        }
+      }
     },
     "last_action": {
       "type": ["string", "null"],

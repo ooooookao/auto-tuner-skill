@@ -33,12 +33,15 @@
             "params",
             "metrics",
             "status",
-            "duration_min"
+            "duration_min",
+            "error_type",
+            "attempt",
+            "retry_of"
           ],
           "properties": {
             "config_id": {
               "type": "string",
-              "description": "配置唯一标识，格式 config-NNN。重试可用 config-NNN-retry"
+              "description": "逻辑参数配置 ID，如 config-001。同一 config_id 可多次执行（不同 attempt），通过 (config_id, attempt) 唯一标识一次运行。"
             },
             "params": {
               "type": "object",
@@ -87,11 +90,11 @@
             "attempt": {
               "type": "integer",
               "minimum": 1,
-              "description": "实验尝试次数，首次为 1。OOM 重试 batch_size 减半后 attempt=2"
+              "description": "该配置的执行尝试序号。首次 attempt=1，OOM 重试后 attempt=2"
             },
             "retry_of": {
               "type": ["string", "null"],
-              "description": "若为重试配置，指向原始 config_id"
+              "description": "若为重试，指向原始 config_id；首次执行或原始配置为 null"
             }
           },
           "allOf": [
