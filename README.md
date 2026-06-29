@@ -89,7 +89,7 @@ auto-tuner/
 | `experiment/dataset_analysis_report.md` | 数据集全面分析报告（含可视化） |
 | `experiment/dataset_analysis/` | 数据集分析可视化图片 |
 | `experiment/decision_log.md` | 每轮决策日志 |
-| `experiment/progress.md` | 主状态文件（agent 位置 + 实时进度） |
+| `experiment/progress.md` | 人类可读进度（轮次对比表 + 排行榜，面向用户） |
 | `experiment/results.json` | 每轮参数与指标汇总 |
 | `experiment/failed_architectures.md` | 架构修改失败记录 |
 | `experiment/degradation_log.md` | 降级事件记录 |
@@ -111,3 +111,42 @@ auto-tuner/
 ## License
 
 MIT
+
+## 数据校验
+
+### results.json Schema 校验
+
+`references/results.schema.json` 定义了 `results.json` 的完整 JSON Schema（draft-07）。执⾏过程中建议定期校验：
+
+```bash
+# 安装 jsonschema（如未安装）
+pip install jsonschema
+
+# 校验 results.json
+python -c "
+import json
+from jsonschema import validate
+
+with open('experiment/results.json') as f:
+    data = json.load(f)
+with open('.claude/skills/auto-tuner/references/results.schema.json') as f:
+    schema = json.load(f)
+
+validate(instance=data, schema=schema)
+print('✅ results.json 校验通过')
+"
+```
+
+无 `jsonschema` 库时，至少做 JSON 完整性检查：
+
+```bash
+python -c "import json; json.load(open('experiment/results.json')); print('✅ JSON 格式正确')"
+```
+
+### state.json 格式检查
+
+`state.json` 是⾮常简单的平层结构，确保 JSON 合法即可：
+
+```bash
+python -c "import json; s=json.load(open('experiment/state.json')); assert 'phase' in s and 'next_action' in s; print(f'✅ state.json 合法, phase={s[\"phase\"]}, next_action={s[\"next_action\"]}')"
+```

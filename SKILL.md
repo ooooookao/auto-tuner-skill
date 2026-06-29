@@ -89,7 +89,7 @@ Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是
 | `{exp_dir}/decision_log.md` | 每轮决策日志 |
 | `{exp_dir}/state.json` | **机器可读状态机**，agent 路由决策依据（phase/round/next_action） |
 | `{exp_dir}/results.json` | 每轮参数与指标汇总（严格遵循 references/results.schema.json） |
-| `{exp_dir}/progress.md` | 主状态文件（agent 位置 + 实时进度，用户可查看） |
+| `{exp_dir}/progress.md` | 人类可读进度（轮次对比 + 最佳排行榜，用户阅读用） |
 | `{exp_dir}/failed_architectures.md` | 架构修改失败记录 |
 | `{exp_dir}/degradation_log.md` | 降级事件记录 |
 | `{exp_dir}/delta-step{N}.md` | 每步增量记录 |

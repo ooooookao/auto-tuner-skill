@@ -86,11 +86,13 @@
 
 ### 恢复流程
 
-1. **读 progress.md**（主状态文件，读"当前状态"节 + 完整历史）
-2. 读最近的 checkpoint-phase{N}.md
-3. 读 checkpoint 之后的所有 delta-step{N}.md
-4. 合并状态，确定当前进度
-5. 从断点继续执行
+1. **读 state.json**（机器状态，确定 phase、next_action、round 等关键字段）
+2. **读 results.json**（获取完整历史指标数据）
+3. **读 progress.md**（人类可读进度，读"当前状态"节 + 最近轮次历史）
+4. 读最近的 checkpoint-phase{N}.md
+5. 读 checkpoint 之后的所有 delta-step{N}.md
+6. 合并状态，确定当前进度
+7. 从断点继续执行
 
 ### 恢复检查
 
