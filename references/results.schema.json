@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AutoTunerResults",
+  "description": "每轮调参结果记录的 JSON Schema。每轮向 experiment/results.json 追加一条记录。",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "round_id",
+      "timestamp",
+      "configs",
+      "best_config_id",
+      "resource_usage"
+    ],
+    "properties": {
+      "round_id": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "轮次编号，从 1 递增"
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "description": "本轮完成时的 ISO 8601 时间戳"
+      },
+      "configs": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": [
+            "config_id",
+            "params",
+            "metrics",
+            "status",
+            "duration_min"
+          ],
+          "properties": {
+            "config_id": {
+              "type": "string",
+              "pattern": "^config-\\d{3}$",
+              "description": "配置唯一标识，格式 config-NNN"
+            },
+            "params": {
+              "type": "object",
+              "description": "超参数键值对，key 为参数名，value 为数值或字符串",
+              "minProperties": 1
+            },
+            "metrics": {
+              "type": "object",
+              "description": "评估指标键值对，key 为指标名，value 为数值",
+              "minProperties": 1
+            },
+            "train_loss": {
+              "type": ["number", "null"],
+              "description": "训练集 loss 最终值，无法获取时为 null"
+            },
+            "val_loss": {
+              "type": ["number", "null"],
+              "description": "验证集 loss 最终值，无法获取时为 null"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["completed", "failed", "oom", "pruned"],
+              "description": "实验状态：completed 正常完成、failed 崩溃、oom 显存溢出、pruned 提前终止"
+            },
+            "duration_min": {
+              "type": "number",
+              "minimum": 0,
+              "description": "该配置实际运行时长（分钟），pruned 为实际运行到终止的时长"
+            },
+            "gpu_memory_gb": {
+              "type": ["number", "null"],
+              "description": "峰值显存占用（GB），无 GPU 或无法获取时为 null"
+            },
+            "seed": {
+              "type": ["integer", "null"],
+              "description": "随机种子，便于精确复现"
+            },
+            "commit_hash": {
+              "type": ["string", "null"],
+              "description": "Git commit hash（如有），标记代码版本"
+            },
+            "error_type": {
+              "type": ["string", "null"],
+              "enum": [null, "OOM", "NaN", "runtime_error", "import_error", "file_not_found", "timeout", "unknown"],
+              "description": "失败类型，status 为 completed 时必为 null"
+            }
+          },
+          "if": {
+            "properties": { "status": { "const": "completed" } }
+          },
+          "then": {
+            "properties": {
+              "error_type": { "const": null }
+            }
+          }
+        }
+      },
+      "best_config_id": {
+        "type": "string",
+        "description": "本轮最佳配置的 config_id"
+      },
+      "resource_usage": {
+        "type": "object",
+        "required": ["parallel_count"],
+        "properties": {
+          "parallel_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "本轮实际并行路数"
+          },
+          "gpu_utilization": {
+            "type": ["string", "null"],
+            "description": "GPU 利用率百分比字符串（如 '72%'），无 GPU 时为 null"
+          }
+        }
+      }
+    }
+  }
+}

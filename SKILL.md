@@ -42,6 +42,8 @@ Step 4 → steps/step4-report.md
 - 数据集分析 → `references/dataset-analysis.md`
 - 审查 → `references/review-checklist.md`
 - 状态管理 → `references/state-management.md`
+- 状态机 → `references/state-schema.md`（state.json 定义 + 状态转换表）
+- results.json 校验 → `references/results.schema.json`（JSON Schema）
 - 经验 → `references/experience.md`
 - 配置生成 → `references/config-generation.md`（框架识别 + 配置文件生成 + Optuna 集成）
 
@@ -63,7 +65,7 @@ Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是
 
 ## 故障熔断
 
-子 agent 失败重试 3 次→降级→记录；质量不达标自动换策略/放宽标准/停止。详见 `references/failure-recovery.md`。
+子 agent 失败重试 3 次→降级→记录；质量不达标请求用户确认是否放宽标准。详见 `references/failure-recovery.md`。
 
 ## 审查机制
 
@@ -85,8 +87,9 @@ Step 0 确认工作区后，询问用户是否自动配置权限。用户选"是
 | `{exp_dir}/dataset_analysis_report.md` | 数据集全面分析报告（含可视化） |
 | `{exp_dir}/dataset_analysis/` | 数据集分析可视化图片 |
 | `{exp_dir}/decision_log.md` | 每轮决策日志 |
+| `{exp_dir}/state.json` | **机器可读状态机**，agent 路由决策依据（phase/round/next_action） |
+| `{exp_dir}/results.json` | 每轮参数与指标汇总（严格遵循 references/results.schema.json） |
 | `{exp_dir}/progress.md` | 主状态文件（agent 位置 + 实时进度，用户可查看） |
-| `{exp_dir}/results.json` | 每轮参数与指标汇总（格式见 step2-tuning.md） |
 | `{exp_dir}/failed_architectures.md` | 架构修改失败记录 |
 | `{exp_dir}/degradation_log.md` | 降级事件记录 |
 | `{exp_dir}/delta-step{N}.md` | 每步增量记录 |

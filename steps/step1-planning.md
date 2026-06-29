@@ -31,12 +31,33 @@ title: 项目理解与参数规划
 
 创建 `{exp_dir}/` 目录及初始文件：
 
-1. **`decision_log.md`**：
+1. **`state.json`** — 机器可读状态机（agent 路由决策的依据）：
+```json
+{
+  "phase": "planning",
+  "round": 0,
+  "architecture_version": 1,
+  "search_stage": null,
+  "best_config_id": null,
+  "best_metrics": {},
+  "target_expr": "",
+  "last_action": null,
+  "next_action": "step1_planning",
+  "stop_reason": null,
+  "retry_count": 0,
+  "consecutive_no_improvement": 0,
+  "last_round_best_metric": null,
+  "last_updated": "<当前ISO时间>"
+}
+```
+详见 `references/state-schema.md`。
+
+2. **`decision_log.md`**：
 ```markdown
 # 决策日志
 ```
 
-2. **`progress.md`**：
+3. **`progress.md`**：
 ```markdown
 # 调参进度
 
@@ -47,9 +68,9 @@ title: 项目理解与参数规划
 - **下一步**：等待 Step 1 完成
 ```
 
-3. **`results.json`**：空数组 `[]`
+4. **`results.json`**：空数组 `[]`
 
-4. **经验库目录**：检查 `~/.claude/skills/auto-tuner/experience/` 是否存在，不存在则创建（含空 `index.md`）
+5. **经验库目录**：检查 `~/.claude/skills/auto-tuner/experience/` 是否存在，不存在则创建（含空 `index.md`）
 
 ---
 

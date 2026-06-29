@@ -54,6 +54,8 @@ auto-tuner/
 │   ├── experience.md                     ← 经验迁移系统（Step 1 读，Step 4 写）
 │   ├── review-checklist.md               ← 审查维度 + 两轮制（审查时读）
 │   ├── state-management.md               ← 增量/快照/断点恢复（状态管理时读）
+│   ├── state-schema.md                   ← state.json 状态机定义 + 状态转换表（路由决策用）
+│   ├── results.schema.json               ← results.json JSON Schema 定义（写入时校验）
 │   ├── config-generation.md              ← 框架识别 + 配置文件生成 + Optuna 集成（Step 2 配置生成时读）
 │   └── dataset-analysis.md               ← 数据集全面分析规则（Step 1 数据集分析时读）
 ├── evals/

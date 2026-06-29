@@ -88,6 +88,21 @@ spawn 研究子 agent（独立上下文，不污染主 agent context），搜索
 
 **架构回溯后的阶段重置**：回到 Step 2 后，调参阶段从粗搜重新开始。checkpoint 编号使用架构版本号前缀（如 `checkpoint-v2-phase1.md`），避免与之前架构的 checkpoint 混淆。之前的 checkpoint 保留在原位，不覆盖。
 
+**每次只能改一个变量**：一次架构回溯只做一项修改（例如只加 attention 层，不同时修改 loss 函数、lr 或数据增强），否则后期无法归因指标提升来源。修改后**先固定超参跑一次对照实验**（使用 checkpoint 时的最佳超参），确认新架构的 baseline 不低于旧架构的最佳指标，再进入 Step 2 粗搜。
+
+**state.json 更新**：回到 Step 2 前写：
+```json
+{
+  "phase": "tuning",
+  "round": 0,
+  "search_stage": "coarse",
+  "next_action": "generate_configs",
+  "architecture_version": "<新版本号>",
+  "consecutive_no_improvement": 0,
+  "retry_count": 0
+}
+```
+
 **决策流程**：先按规则快速评估 → 规则不确定时再搜索 → 选最优方案执行。
 
 ```
@@ -120,6 +135,8 @@ spawn 研究子 agent（独立上下文，不污染主 agent context），搜索
 **记录**：每次修改写入 `experiment/decision_log.md`：选了什么方案、为什么选这个、预期效果。
 
 ### 3.1.5 判定与回档
+
+每次判定后**必须更新 state.json**：`phase` 不变（仍在 optimization 中），`next_action` 设为对应结果（回档则回 `generate_configs`，失败则回 `generate_report`）。
 
 新架构在 Step 2 中调参，判定规则：
 - 前 5 轮指标明显下滑（比 checkpoint 低 > 0.05）→ 提前回档

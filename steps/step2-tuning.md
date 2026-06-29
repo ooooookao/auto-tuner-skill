@@ -53,6 +53,9 @@ title: 调参主循环
 
 ## 2.1 环境准备
 
+**必须**：每轮开始前先读 `experiment/state.json`，确认 `next_action` 为 `generate_configs`。
+如果 next_action 不匹配，检查是否因用户干预或断点恢复改变了状态。
+
 建立目录结构：`experiment/round-N/config-NNN/`
 
 检测资源：
@@ -155,6 +158,7 @@ Git 项目用 worktree 隔离不同配置的代码修改：
 ```
 生成 N 组配置（首轮：从 Step 1 参数表按粗搜范围随机采样 5-10 组；
        后续轮次：基于趋势分析，在最佳配置附近扰动采样，见下方"配置生成策略"）
+  → 📝 更新 state.json：next_action="run_experiments", round=N, search_stage
   → 📝 更新 progress.md：本轮配置已生成
   → 并行运行（方式 A/B/C 选一，见上方决策树），每个子 agent 写结果到独立文件
   → 监控进度（检查进程是否存活、GPU 利用率）
@@ -162,9 +166,11 @@ Git 项目用 worktree 隔离不同配置的代码修改：
   → 中途检查（训练 20% 时，见"提前终止"——在训练中途触发，与下方 Gate 互不干扰）
   → 收集结果（等待所有分支完成或超时）
   → ⚠️ Gate：检查 results.json 数据完整性（所有分支已返回/超时/标记 failed）
-  → 写入 results.json（格式见下方"results.json 格式"）
+  → 写入 results.json（格式见下方"results.json 格式"，严格遵循 results.schema.json）
   → 趋势分析 + 参数重要性（见 2.4 节）
   → ⚠️ Gate：确认分析已完成，再进入终止判断
+  → 📝 更新 state.json：consecutive_no_improvement, best_metrics, last_action="analyze_results", next_action="check_termination"
+  → 终止条件判断（见 2.5 节），更新 state.json 的 next_action
 ```
 
 **Gate 说明**：Gate 是自动检查点（数据完整性 + 分析完成度），不是用户确认点。"全程自主"原则不变。
@@ -269,9 +275,11 @@ Git 项目用 worktree 隔离不同配置的代码修改：
 
 ### 1. 达标 → Step 4
 
-所有主要指标达到目标值。跳到 Step 4 生成报告。
+所有主要指标达到目标值。**更新 state.json**：`phase="reporting", next_action="generate_report", stop_reason="target_reached"`。跳到 Step 4 生成报告。
 
 ### 2. 放弃 → Step 4
+
+**更新 state.json**：`phase="stopped", next_action="generate_report", stop_reason` 设为对应原因。跳到 Step 4 生成报告。
 
 满足以下**任一**条件：
 - 3 种以上架构各调满 10 轮，最佳指标仍距目标 > 0.05
@@ -283,6 +291,8 @@ Git 项目用 worktree 隔离不同配置的代码修改：
 ### 3. 架构回溯 → Step 3
 
 **触发**：连续 10 轮无明显提升（< 0.01）且距达标仍有差距（> 0.03）。
+
+**更新 state.json**：`phase="optimization", next_action="architecture_search", architecture_version += 1`。
 
 跳到 Step 3 执行架构优化，完成后回到 Step 2 继续调参。
 
@@ -306,7 +316,7 @@ Git 项目用 worktree 隔离不同配置的代码修改：
   [用户可中断并输入新指令调整方向]
 ```
 
-用户输入任何内容 → agent 暂停调参，读取用户指令，调整策略后继续。
+用户输入任何内容 → agent **先读 state.json**，暂停调参，读取用户指令，调整策略后更新 state.json（phase 不变，next_action 根据用户指令调整）再继续。
 用户无输入 → 继续下一轮。
 
 **用户可修改的内容**（显式支持）：
@@ -536,32 +546,40 @@ Step 2 专属补充：
 
 ## results.json 格式
 
-每轮调参结束后追加一条记录到 `experiment/results.json`：
+**所有写入必须严格遵循 `references/results.schema.json`（JSON Schema 定义）**。字段名与 schema 一致（round_id 而非 round，config_id 而非 id，gpu_memory_gb 而非 memory_peak_gb）。写入后建议用简单规则自检：每个 config 对象必须包含 config_id、params、metrics、status、duration_min 五个必填字段。
+
+合法 status 值：`completed` / `failed` / `oom` / `pruned`。多轮写入前用 `python -c "import json; json.load(open('experiment/results.json'))"` 验证 JSON 完整性。
+
+参考示例见 `examples/results.example.json`。
+
+每轮调参结束后追加一条记录到 `experiment/results.json`（注意字段已更新为 schema 定义的标准名称）：
 
 ```json
 [
   {
-    "round": 1,
+    "round_id": 1,
     "timestamp": "2024-01-15T10:30:00",
     "configs": [
       {
-        "id": "config-001",
+        "config_id": "config-001",
         "params": {"learning_rate": 0.001, "batch_size": 16},
         "metrics": {"dice_lv": 0.85, "dice_rv": 0.82, "dice_overall": 0.87, "loss": 0.15},
+        "train_loss": 0.12,
+        "val_loss": 0.15,
         "status": "completed",
         "duration_min": 45,
-        "memory_peak_gb": 6.2
+        "gpu_memory_gb": 6.2,
+        "seed": 42,
+        "commit_hash": null,
+        "error_type": null
       }
     ],
-    "best_config": "config-001",
+    "best_config_id": "config-001",
     "resource_usage": {"parallel_count": 5, "gpu_utilization": "72%"}
   }
 ]
 ```
 
-字段说明：
-- `params`：本轮尝试的所有参数及其值
-- `metrics`：对应指标，字段名由 agent 根据项目定义
-- `status`：completed / failed / oom / pruned
-- `duration_min`：该配置运行耗时
-- `memory_peak_gb`：峰值内存/显存占用
+### 兼容性说明
+
+旧版 results.json 使用 `round`、`id`、`memory_peak_gb`、`best_config` 等字段名。写入新数据时按 schema 标准名称写。读取时按"新字段优先，旧字段 fallback"原则兼容。迁移完成后不再支持旧字段名。

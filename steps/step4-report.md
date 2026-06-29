@@ -6,7 +6,7 @@ title: 达标报告
 # Step 4：达标报告
 
 **目的**：生成最终报告，记录全部调参历程。
-**前置**：达标或触发放弃条件。
+**前置**：Step 2 触发达标或放弃条件。
 **输出**：`experiment/report.md`。
 
 ---
@@ -80,6 +80,8 @@ HTML 报告的数据来源与 report.md 完全相同（results.json + decision_l
 - 报告路径：`experiment/report.md` + `experiment/report.html`
 - 关键指标摘要：最佳指标 vs 目标值
 - 是否达标
+
+**更新 state.json**：`phase` 设为 `"completed"` 或 `"stopped"`，`next_action` 设对应值，`last_updated` 设为当前时间。
 
 ---
 
