@@ -25,7 +25,9 @@
         "gpu_memory_gb": 6.2,
         "seed": 42,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       },
       {
         "config_id": "config-002",
@@ -49,7 +51,9 @@
         "gpu_memory_gb": 6.1,
         "seed": 43,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       },
       {
         "config_id": "config-003",
@@ -73,7 +77,9 @@
         "gpu_memory_gb": 11.4,
         "seed": 44,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       },
       {
         "config_id": "config-004",
@@ -87,7 +93,7 @@
           "dice_lv": 0.73,
           "dice_rv": 0.71,
           "dice_myo": 0.65,
-          "dice_overall": 0.70,
+          "dice_overall": 0.7,
           "loss": 0.22
         },
         "train_loss": 0.09,
@@ -97,7 +103,9 @@
         "gpu_memory_gb": 11.2,
         "seed": 45,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       },
       {
         "config_id": "config-005",
@@ -112,16 +120,18 @@
           "dice_rv": 0.74,
           "dice_myo": 0.68,
           "dice_overall": 0.73,
-          "loss": 0.20
+          "loss": 0.2
         },
         "train_loss": 0.18,
-        "val_loss": 0.20,
+        "val_loss": 0.2,
         "status": "completed",
         "duration_min": 30,
         "gpu_memory_gb": 3.8,
         "seed": 46,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       }
     ],
     "best_config_id": "config-002",
@@ -149,14 +159,16 @@
           "dice_overall": 0.83,
           "loss": 0.13
         },
-        "train_loss": 0.10,
+        "train_loss": 0.1,
         "val_loss": 0.13,
         "status": "completed",
         "duration_min": 46,
         "gpu_memory_gb": 6.1,
         "seed": 47,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       },
       {
         "config_id": "config-007",
@@ -180,7 +192,9 @@
         "gpu_memory_gb": 6.2,
         "seed": 48,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       },
       {
         "config_id": "config-008",
@@ -204,7 +218,15 @@
         "gpu_memory_gb": 11.0,
         "seed": 49,
         "commit_hash": "a1b2c3d",
-        "error_type": null
+        "error_type": null,
+        "prune_reason": "bottom_quartile",
+        "prune_epoch": 6,
+        "metrics_at_prune": {
+          "dice_overall": 0.62,
+          "loss": 0.31
+        },
+        "attempt": 1,
+        "retry_of": null
       }
     ],
     "best_config_id": "config-006",

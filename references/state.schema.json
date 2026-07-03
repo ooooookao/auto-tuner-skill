@@ -18,7 +18,8 @@
     "retry_count",
     "consecutive_no_improvement",
     "last_round_best_metric",
-    "last_updated"
+    "last_updated",
+    "autonomy_mode"
   ],
   "properties": {
     "phase": {
@@ -55,8 +56,7 @@
     },
     "target_conditions": {
       "type": "array",
-      "minItems": 1,
-      "description": "结构化达标条件，至少包含一个条件，供机器精确判达标",
+      "description": "结构化达标条件，供机器精确判达标。planning 阶段（round=0，目标未定）允许为空数组；进入 tuning/optimization/reporting 后必须至少 1 条。每条含 metric/operator/value。连续无提升判断必须遵守 operator 方向。",
       "items": {
         "type": "object",
         "required": ["metric", "operator", "value"],
@@ -112,6 +112,11 @@
       "type": "string",
       "format": "date-time",
       "description": "ISO 8601 时间戳"
+    },
+    "autonomy_mode": {
+      "type": "string",
+      "enum": ["full", "interactive"],
+      "description": "执行模式。full=全程自主，使用默认策略；interactive=在数据分析深度、数据集子集、目标放宽等节点询问用户"
     }
   },
   "allOf": [
@@ -123,6 +128,16 @@
         "required": ["stop_reason"],
         "properties": {
           "stop_reason": { "not": { "type": "null" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "phase": { "enum": ["tuning", "optimization", "reporting", "completed", "stopped"] } }
+      },
+      "then": {
+        "properties": {
+          "target_conditions": { "minItems": 1 }
         }
       }
     },

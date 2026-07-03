@@ -26,12 +26,13 @@
   "target_expr": "dice >= 0.90",
   "target_conditions": [{"metric": "dice", "operator": ">=", "value": 0.90}],
   "last_action": null | "step1_planning" | "generate_configs" | "run_experiments" | "analyze_results" | "architecture_search" | "generate_report" | "waiting_user",
-  "next_action": "step1_planning" | "generate_configs" | "run_experiments" | "analyze_results" | "check_termination" | "architecture_search" | "generate_report" | "waiting_user",
-  "stop_reason": null | "target_reached" | "too_many_rounds" | "user_stopped" | "budget_exhausted",
+  "next_action": "step1_planning" | "generate_configs" | "run_experiments" | "analyze_results" | "check_termination" | "architecture_search" | "generate_report" | "waiting_user" | "completed" | "stopped",
+  "stop_reason": null | "target_reached" | "too_many_rounds" | "too_many_architectures" | "stagnated" | "quality_meltdown" | "user_stopped" | "budget_exhausted",
   "retry_count": 0,
   "consecutive_no_improvement": 0,
   "last_round_best_metric": null,
-  "last_updated": "2026-06-29T12:00:00Z"
+  "last_updated": "2026-06-29T12:00:00Z",
+  "autonomy_mode": "full" | "interactive"
 }
 ```
 
@@ -46,7 +47,7 @@
 | `best_config_id` | string\|null | ✅ | 全局最佳配置 ID |
 | `best_metrics` | object | ✅ | 全局最佳指标，如 `{"dice": 0.89}` |
 | `target_expr` | string | ✅ | 达标条件表达式，如 `"dice >= 0.90 且 loss < 0.10"` |
-| `target_conditions` | array | ✅ | 结构化达标条件，至少包含一个条件。每条含 metric（指标名）、operator（>= 越大越好 / <= 越小越好）、value（目标值）。连续无提升判断必须遵守 operator 方向。 |
+| `target_conditions` | array | ✅ | 结构化达标条件。planning 阶段（round=0，目标未定）允许为空数组 `[]`；进入 tuning/optimization/reporting 后至少 1 条。每条含 metric、operator（>= 越大越好 / <= 越小越好）、value。连续无提升判断必须遵守 operator 方向。 |
 | `last_action` | string\|null | ✅ | 刚完成的动作 |
 | `next_action` | string | ✅ | 下一步动作 — agent 读这个字段就知道该干什么（见下方"状态转换表"） |
 | `stop_reason` | string\|null | ✅ | 停止原因，phase 不为 completed/stopped 时必为 null |
@@ -54,6 +55,7 @@
 | `consecutive_no_improvement` | integer | ✅ | 连续无提升轮数（用于质量熔断和死循环检测） |
 | `last_round_best_metric` | number\|null | ✅ | 上一轮最佳指标的数值，便于快速比较 |
 | `last_updated` | string | ✅ | ISO 8601 时间戳 |
+| `autonomy_mode` | string | ✅ | 执行模式。`full`=全程自主，使用默认策略；`interactive`=在数据分析深度、数据集子集、目标放宽等节点询问用户。Step 0 选择，Step 1 写入 state.json |
 
 ---
 
@@ -130,6 +132,7 @@ Step 1（1.0 初始化）时创建：
   "best_config_id": null,
   "best_metrics": {},
   "target_expr": "",
+  "target_conditions": [],
   "last_action": null,
   "next_action": "step1_planning",
   "stop_reason": null,

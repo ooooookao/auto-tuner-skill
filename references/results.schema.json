@@ -87,6 +87,19 @@
               "enum": [null, "OOM", "NaN", "runtime_error", "import_error", "file_not_found", "timeout", "unknown"],
               "description": "运行错误类型。completed 和 pruned 时必须为 null；oom 和 failed 时必须为非 null。"
             },
+            "prune_reason": {
+              "type": ["string", "null"],
+              "enum": [null, "loss_divergence", "bottom_quartile", "user_stop", "oom"],
+              "description": "提前终止原因。status=pruned 时必须非 null。"
+            },
+            "prune_epoch": {
+              "type": ["integer", "null"],
+              "description": "提前终止时的 epoch 数。status=pruned 时必须非 null。"
+            },
+            "metrics_at_prune": {
+              "type": ["object", "null"],
+              "description": "提前终止时的指标快照。status=pruned 时建议填写。"
+            },
             "attempt": {
               "type": "integer",
               "minimum": 1,
@@ -135,8 +148,11 @@
                 "properties": { "status": { "const": "pruned" } }
               },
               "then": {
+                "required": ["prune_reason", "prune_epoch"],
                 "properties": {
-                  "error_type": { "const": null }
+                  "error_type": { "const": null },
+                  "prune_reason": { "not": { "const": null } },
+                  "prune_epoch": { "not": { "const": null } }
                 }
               }
             }

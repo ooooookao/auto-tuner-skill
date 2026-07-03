@@ -1,0 +1,55 @@
+[
+  {
+    "round_id": 1,
+    "timestamp": "2026-06-29T11:00:00Z",
+    "configs": [
+      {
+        "config_id": "config-001",
+        "params": {"learning_rate": 0.001, "batch_size": 32},
+        "metrics": {},
+        "train_loss": null,
+        "val_loss": null,
+        "status": "oom",
+        "duration_min": 5,
+        "gpu_memory_gb": 23.5,
+        "seed": 42,
+        "commit_hash": "abc123",
+        "error_type": "OOM",
+        "attempt": 1,
+        "retry_of": null
+      },
+      {
+        "config_id": "config-001",
+        "params": {"learning_rate": 0.001, "batch_size": 16},
+        "metrics": {"accuracy": 0.82},
+        "train_loss": 0.45,
+        "val_loss": 0.50,
+        "status": "completed",
+        "duration_min": 8,
+        "gpu_memory_gb": 11.8,
+        "seed": 42,
+        "commit_hash": "abc123",
+        "error_type": null,
+        "attempt": 2,
+        "retry_of": "config-001"
+      },
+      {
+        "config_id": "config-002",
+        "params": {"learning_rate": 0.0005, "batch_size": 16},
+        "metrics": {"accuracy": 0.85},
+        "train_loss": 0.38,
+        "val_loss": 0.42,
+        "status": "completed",
+        "duration_min": 8,
+        "gpu_memory_gb": 12.1,
+        "seed": 43,
+        "commit_hash": "abc123",
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
+      }
+    ],
+    "best_config_id": "config-002",
+    "resource_usage": {"parallel_count": 2, "gpu_utilization": "89%"}
+  }
+]

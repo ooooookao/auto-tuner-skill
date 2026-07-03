@@ -5,22 +5,49 @@
     "configs": [
       {
         "config_id": "config-001",
-        "params": {"learning_rate": 0.001, "batch_size": 16},
-        "metrics": {"accuracy": 0.82},
-        "train_loss": 0.32, "val_loss": 0.35,
-        "status": "completed", "duration_min": 30,
-        "gpu_memory_gb": 4.5, "seed": 42, "commit_hash": null, "error_type": null
+        "params": {
+          "learning_rate": 0.001,
+          "batch_size": 16
+        },
+        "metrics": {
+          "accuracy": 0.82
+        },
+        "train_loss": 0.32,
+        "val_loss": 0.35,
+        "status": "completed",
+        "duration_min": 30,
+        "gpu_memory_gb": 4.5,
+        "seed": 42,
+        "commit_hash": null,
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       },
       {
         "config_id": "config-002",
-        "params": {"learning_rate": 0.01, "batch_size": 32},
-        "metrics": {"accuracy": 0.65},
-        "train_loss": 0.55, "val_loss": 0.60,
-        "status": "pruned", "duration_min": 8,
-        "gpu_memory_gb": 4.5, "seed": 43, "commit_hash": null, "error_type": null
+        "params": {
+          "learning_rate": 0.01,
+          "batch_size": 32
+        },
+        "metrics": {
+          "accuracy": 0.65
+        },
+        "train_loss": 0.55,
+        "val_loss": 0.6,
+        "status": "pruned",
+        "duration_min": 8,
+        "gpu_memory_gb": 4.5,
+        "seed": 43,
+        "commit_hash": null,
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       }
     ],
     "best_config_id": "config-001",
-    "resource_usage": {"parallel_count": 2, "gpu_utilization": "60%"}
+    "resource_usage": {
+      "parallel_count": 2,
+      "gpu_utilization": "60%"
+    }
   }
 ]

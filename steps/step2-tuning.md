@@ -16,14 +16,15 @@ title: 调参主循环
 ## 操作清单
 
 - [ ] 2.1 建立实验目录结构
-- [ ] 2.2 检测 GPU/内存资源上限
-- [ ] 2.3 生成第一轮配置
-- [ ] 2.4 并行运行（默认 5 路）
-- [ ] 2.5 监控进度、收集结果
-- [ ] 2.6 写入 results.json 和 progress.md
-- [ ] 2.7 趋势分析 + 参数重要性（详见 2.4 节）
-- [ ] 2.8 检查终止/审查/架构回溯条件
-- [ ] 2.9 生成下一轮配置并继续，或跳 Step 4
+- [ ] 2.2 检测 GPU/内存资源上限（按空闲显存计算，预留 15% 余量）
+- [ ] 2.3 首次 1 路 baseline 测量真实峰值显存
+- [ ] 2.4 生成第一轮配置
+- [ ] 2.5 并行运行（路数由 free_memory×0.85 / peak_memory 决定，多卡隔离 CUDA_VISIBLE_DEVICES）
+- [ ] 2.6 监控进度、收集结果
+- [ ] 2.7 写入 results.json 和 progress.md
+- [ ] 2.8 趋势分析 + 参数重要性（详见 2.4 节）
+- [ ] 2.9 检查终止/审查/架构回溯条件
+- [ ] 2.10 生成下一轮配置并继续，或跳 Step 4
 
 ---
 
@@ -65,9 +66,66 @@ title: 调参主循环
 
 ---
 
-## 2.2 并行执行（实操指南）
+## 2.2 GPU/并行执行（实操指南）
 
-**默认 5 路并行**。选择并行方式的决策树：
+### 资源检测
+
+每轮开始前检测真实可用资源：
+
+```bash
+nvidia-smi --query-gpu=index,name,memory.total,memory.free,memory.used,utilization.gpu --format=csv
+```
+
+记录：
+- 每张 GPU 的 `memory.free`（不是 `memory.total`）
+- 当前利用率 / 是否有其他占用进程
+- 系统空闲内存、CPU 核心数、磁盘剩余空间
+
+### 单实验峰值测量
+
+**首次执行必须先用 1 路 baseline 测量真实峰值显存**，不要直接按理论值或默认 5 路启动。
+
+测量方法：
+1. 取 Step 1 的默认/当前最佳配置，启动 1 个训练进程。
+2. 在训练最密集阶段（通常第 1-2 个 epoch）读取 `nvidia-smi` 峰值。
+3. 记录 `peak_gpu_memory_gb` 到 `experiment/hardware_profile.md`。
+
+### 并行路数计算
+
+基于**空闲显存**计算，而非总显存：
+
+```
+safe_memory_per_gpu_gb = free_memory_gb * 0.85
+max_parallel_per_gpu   = floor(safe_memory_per_gpu_gb / peak_gpu_memory_gb)
+total_parallel         = sum(max_parallel_per_gpu across all available GPUs)
+upper_cap              = min(total_parallel, 8)
+```
+
+约束：
+- 至少保留 15% 显存余量，防止显存碎片、CUDA 上下文和同时启动峰值。
+- 多卡时按卡隔离：为每个子进程显式设置 `CUDA_VISIBLE_DEVICES`，不要让多个实验共享同一张卡。
+- 如果单张卡空闲显存不足以跑 1 路（即使按 0.85 折算后），先尝试降低 batch_size / 减小输入尺寸，而不是跨卡拆分同一次实验。
+- DataLoader 的 CPU 内存、磁盘 I/O 和临时文件竞争也会限制并行数。若出现 CPU 100% 或磁盘饱和，优先降路数而不是继续加卡。
+
+### 启动扩容策略
+
+```
+第 1 次：1 路 baseline（测峰值 + 验代码）
+第 2 次起：按上述公式计算并行路数
+后续：动态监控，显存 >85% 时减 1 路，<50% 持续 2 分钟且 CPU/磁盘未饱和时加 1 路
+```
+
+### 多卡隔离与输出隔离
+
+每个并行实验必须：
+- 绑定指定 GPU：`CUDA_VISIBLE_DEVICES={gpu_index}`
+- 写入独立目录：`experiment/round-N/config-NNN/`
+- 使用独立 checkpoint、日志、tensorboard 目录，禁止多实验共享同名文件
+- 结果文件独立：`experiment/round-N/config-NNN/result.json`
+
+### 并行方式选择
+
+决策树（在计算出的并行路数内选择执行方式）：
 
 ```
 需要修改代码？ ──→ Yes ──→ 方式 C（Worktree 隔离）
@@ -77,18 +135,17 @@ title: 调参主循环
   ──→ 方式 A（Agent 并行，默认）
 ```
 
-以下是 Claude Code 中的实际并行方式：
-
 ### 方式 A：Agent 并行（推荐，适用于独立实验）
 
 每组配置用一个独立 Agent 执行，天然并行且上下文隔离：
 
 ```
 单轮流程：
-1. 生成 N 组配置
+1. 生成 N 组配置（N ≤ 计算出的并行上限）
 2. 为每组配置启动一个 Agent（background=true），prompt 包含：
    - 配置参数
    - 训练脚本路径和运行命令
+   - 分配的 GPU index（CUDA_VISIBLE_DEVICES）
    - 结果输出路径（写到 experiment/round-N/config-NNN/result.json）
    - 超时时间
 3. 所有 Agent 启动后，等待返回
@@ -101,23 +158,26 @@ title: 调参主循环
 ```
 运行以下训练实验，将结果写到 {result_path}：
 - 项目路径：{project_path}
+- 分配 GPU：CUDA_VISIBLE_DEVICES={gpu_index}
 - 修改参数：{param_changes}
 - 运行命令：{run_command}
 - 超时：{timeout}
-- 结果格式：{"metrics": {...}, "status": "completed/failed/oom", "duration_min": N}
-如果 OOM，降低 batch_size 50% 重试一次。如果仍失败，status 设为 "failed"。
+- 结果格式：{"metrics": {...}, "status": "completed/failed/oom", "duration_min": N, "peak_gpu_memory_gb": N}
+要求：
+1. 启动后 30 秒内报告进程是否存活
+2. 如果 OOM，降低 batch_size 50% 重试一次；仍失败则 status="oom"
+3. 结果文件必须独立写入指定目录，不要覆盖其他实验的文件
 ```
 
 ### 方式 B：Bash 后台并行（适用于轻量实验）
 
-直接用 Bash 的 `run_in_background` 并行运行多个训练进程：
+直接用 Bash 的 `run_in_background` 并行运行多个训练进程，每进程绑定不同 GPU：
 
 ```bash
-# 为每组配置生成不同的参数文件，然后后台运行
-python train.py --config experiment/round-1/config-001.yaml &
-python train.py --config experiment/round-1/config-002.yaml &
-# ...最多 5 个
-wait  # 等待所有完成
+CUDA_VISIBLE_DEVICES=0 python train.py --config experiment/round-1/config-001.yaml --outdir experiment/round-1/config-001/ &
+CUDA_VISIBLE_DEVICES=1 python train.py --config experiment/round-1/config-002.yaml --outdir experiment/round-1/config-002/ &
+# ...按计算出的路数启动，每卡不超过 max_parallel_per_gpu
+wait
 ```
 
 ### 方式 C：Worktree 隔离（适用于需要修改代码的实验）
@@ -127,29 +187,20 @@ Git 项目用 worktree 隔离不同配置的代码修改：
 ```
 1. EnterWorktree 创建隔离环境
 2. 在 worktree 中修改代码/参数
-3. 运行训练
+3. 绑定指定 GPU，运行训练
 4. 收集结果后 ExitWorktree
 ```
 
-### 并行路数动态调整
+### OOM 处理
 
-**实际并行上限由单次训练的显存占用决定**，不是固定 5 路：
+| 场景 | 处理 |
+|------|------|
+| 单路 OOM | 该分支降低 batch_size 50% 重试，最多 2 次；同时记录峰值，必要时下调后续并行路数 |
+| 多路同时 OOM | 立即暂停新启动，当前存活实验继续；下一轮按 free_memory * 0.80 重新计算 |
+| 全部 OOM | 全局降低 batch_size 或减小输入尺寸，重新测峰值后再扩容 |
+| 显存碎片导致 OOM | 减少每卡并行数，留出更大余量 |
 
-```
-可用并行路数 = GPU 总显存 / 单次训练峰值显存（向下取整）
-例：24GB GPU，单次训练占 10GB → 最多 2 路并行
-例：24GB GPU，单次训练占 4GB → 最多 5 路并行
-```
-
-首次运行 baseline 时记录 `gpu_memory_gb`，后续以此为基准计算并行路数（上限 8）。
-
-动态调整：
-- GPU 显存 > 85% → 减 1 路
-- GPU 显存 < 50% → 加 1 路
-- 单路 OOM → 该分支降低 batch_size 50% 重试，最多 2 次
-- 全部 OOM → 降低 batch_size 全局重试
-
-**无 GPU 时**：CPU 模式下并行路数 = CPU 核心数 / 2（上限 8），使用方式 B（Bash 后台）。
+**无 GPU 时**：CPU 模式下并行路数 = min(CPU 核心数 / 2, 内存允许路数, 8)，使用方式 B（Bash 后台）。内存允许路数 = (free_ram_gb * 0.7) / 单进程峰值内存。
 
 ---
 
@@ -177,14 +228,48 @@ Git 项目用 worktree 隔离不同配置的代码修改：
 
 ### 提前终止（Pruning）
 
-**首次检查点位置**：先检测训练脚本是否有 warmup 机制（搜索 `warmup`、`lr_scheduler`、`LinearLR`、`CosineAnnealing` 等关键字）。如果有 warmup，首次检查推迟到 **30%**；否则在 **20%** 检查。
+优先使用 Optuna HyperbandPruner（如果环境有 Optuna）。手动 pruning 仅作为 fallback。
 
-每个分支到达首次检查点时：
-- 如果当前指标比历史最佳低 > 0.1 → **提前终止**该分支，释放资源
-- 如果 loss 没有下降趋势（前 N 个 epoch 的 loss 斜率 > 0）→ **提前终止**
-- 如果该分支 OOM 或崩溃 → 标记为 failed，不重试（本轮内）
+#### 最小观察要求
 
-提前终止的分支记录到 results.json（status: "pruned"），不计入正常实验统计。
+任何 pruning 决策前，必须满足：
+- 至少观察到 **min(5, 总 epoch 的 25%)** 个 epoch。
+- 有 warmup 时，首次检查点不得早于 warmup 结束后的第 2 个 epoch。
+- 每个检查点必须基于 **同一训练进度** 的指标比较（例如都在第 5 个 epoch）。
+
+#### 手动 pruning 规则
+
+每个分支到达检查点时，按顺序判断：
+
+1. **Hard fail**：OOM / 崩溃 / NaN loss → status="failed"，立即终止，不重试（本轮内）。
+2. **Loss 发散**：连续 3 个 checkpoint 的验证 loss 单调上升（或训练 loss 爆炸 > 初始 10 倍）→ status="pruned"，原因 `loss_divergence`。
+3. **同进度分位数比较**：
+   - 收集所有**已完成到同一进度**的实验在该进度的指标。
+   - 计算目标指标的当前分位数（越大越好用 ≥ 分位，越小越好用 ≤ 分位）。
+   - 若连续 2 个 checkpoint 都处于最差 25% 分位，且无上升趋势 → status="pruned"，原因 `bottom_quartile`。
+   - 禁止用固定阈值（如 0.1）跨配置比较早期指标。
+4. **重建/生成任务双指标**：对于医学图像重建、去噪、生成等任务，必须同时检查：
+   - 验证 loss（或 MAE/MSE）
+   - 图像质量指标（PSNR、SSIM 等）
+   只有两项都持续变差时才 pruning；单指标差但图像指标稳定则继续观察。
+5. **慢启动保护**：
+   - Cosine / Plateau / 大 warmup 调度下，前 30% epoch 指标波动不直接 pruning，只看 loss 是否发散。
+   - 第 30% 后仍无提升，再触发分位数比较。
+
+#### 检查点间隔
+
+- 总 epoch ≤ 10：每 2 个 epoch 检查一次。
+- 总 epoch 11-50：每 5 个 epoch 检查一次。
+- 总 epoch > 50：每 10 个 epoch 检查一次。
+
+#### 记录
+
+提前终止的分支写入 results.json（status: "pruned"），包含：
+- `prune_reason`：loss_divergence / bottom_quartile / user_stop / oom
+- `prune_epoch`：终止 epoch
+- `metrics_at_prune`：终止时的指标快照
+
+被 pruning 的实验不计入正常统计，但参与分位数计算（避免重复探索已知差的方向）。
 
 ### 实验对比表
 
@@ -211,26 +296,54 @@ Git 项目用 worktree 隔离不同配置的代码修改：
 
 ### 参数重要性分析
 
-从第 3 轮开始（积累足够数据后），每轮计算参数重要性：
+从第 3 轮开始（至少积累 15 组 completed 实验后），每轮计算参数重要性。**样本不足时只报告趋势，不永久冻结任何参数。**
 
-**方法**：计算每个参数与指标的相关性（Pearson 或 Spearman），同时检测参数交互：
+#### 优先方法
 
-1. **单参数重要性**：计算每个参数值与指标的相关系数绝对值
-2. **交互检测**：检查参数对 (A, B) 的联合变化是否比单独变化更能解释指标波动
-   - 简化方法：如果固定 A 在高/低两组时，B 与指标的相关性差异 > 0.2 → 存在交互
-   - 存在交互的参数对记入 decision_log，后续调参时同时调整而非独立调
-3. **排序**：按相关性绝对值排序，取 top-K 作为重要参数
+1. **Optuna fANOVA / permutation importance（推荐）**
+   - 如果使用 Optuna，直接调用 `optuna.importance.get_param_importances(study)`。
+   - 它自动处理混合类型和交互，优于简单相关。
 
-**应用**：
-- 重要性 < 0.1 且无交互 → 固定为当前最佳值，后续不再调
-- 重要性 > 0.3 或存在交互 → 重点精细搜索
-- 存在交互的参数对 → 后续采样时同时调整，不独立固定
-- 结果记入 `experiment/decision_log.md` 和 `experiment/progress.md`
+2. **手动 fallback（无 Optuna 时）**
+   - **数值参数**：Spearman 秩相关（对单调非线性更稳健）。报告样本数 n 和 |rho|。
+   - **类别参数**：按类别分组统计目标指标均值/中位数，用 ANOVA 或 Kruskal-Wallis 检验 p 值判断是否有显著差异。
+   - **交互检测**：用随机森林或基于条件分组的简化方法。只有在样本量 ≥ 30 时才尝试交互检测；否则只标记疑似交互。
+
+#### 统计可靠性要求
+
+- 每个参数的**有效样本数 ≥ 8** 才计算重要性。
+- 报告置信区间或 p 值：Spearman 给出 p 值；分组统计给出 Kruskal-Wallis p 值。
+- 重要性低（|rho| < 0.2 或 p > 0.1）**不表示参数无用**，可能是：
+  - 搜索范围太窄
+  - 参数只在特定组合下有效
+  - 样本不足
+
+#### 应用规则
+
+| 情况 | 动作 |
+|------|------|
+| 样本 ≥ 15、fANOVA/permutation 显示重要性 < 0.05 | 标记为"低优先级"，缩小搜索范围，但不永久冻结 |
+| 样本 ≥ 15、重要性 > 0.2 | 重点精细搜索 |
+| 检测到显著交互 | 相关参数后续同时调整，不独立固定 |
+| 样本 < 15 或 p 不显著 | 继续探索，不做冻结决策 |
+| 最佳配置出现 | 至少用 2 个不同 seed 复现一次，再确认"收敛" |
+
+#### 禁止行为
+
+- 禁止仅因 |rho| < 0.1 就永久固定参数。
+- 禁止在样本不足时将参数标为"不重要"。
+- 禁止忽略类别变量的非连续性（不要用 Pearson）。
+
+结果记入 `experiment/decision_log.md` 和 `experiment/progress.md`，包含：样本数、方法、top-3 参数、低优先级参数、疑似交互对。
 
 ### 死循环检测
 
-- 连续 3 轮以上核心参数变化 < 5% → 判定为死循环
-- 强制跳出：固定已收敛的参数，换一个之前没探索过的方向
+- 连续 3 轮以上核心参数变化 < 5% → 判定为"疑似收敛"，不是死循环。
+- 处理：
+  1. 用 2 个不同 seed 复现当前最佳配置。
+  2. 若复现结果稳定 → 缩小这些参数的搜索范围到 ±5%，进入微调阶段。
+  3. 若复现结果波动大 → 扩大范围或换方向，避免虚假收敛。
+- 不要"固定"参数后直接放弃探索；记录到 decision_log 并说明理由。
 
 ### 递进策略
 
@@ -548,9 +661,47 @@ Step 2 专属补充：
 
 ## results.json 格式
 
-**所有写入必须严格遵循 `references/results.schema.json`（JSON Schema 定义）**。字段名与 schema 一致（round_id 而非 round，config_id 而非 id，gpu_memory_gb 而非 memory_peak_gb）。写入后建议用简单规则自检：每个 config 对象必须包含 config_id、params、metrics、status、duration_min 五个必填字段。
+**所有写入必须严格遵循 `references/results.schema.json`（JSON Schema 定义）**。字段名与 schema 一致（round_id 而非 round，config_id 而非 id，gpu_memory_gb 而非 memory_peak_gb）。写入后建议用简单规则自检：每个 config 对象必须包含 config_id、params、metrics、status、duration_min、error_type、attempt、retry_of 八个必填字段。
 
-合法 status 值：`completed` / `failed` / `oom` / `pruned`。多轮写入前用 `python -c "import json; json.load(open('experiment/results.json'))"` 验证 JSON 完整性。
+合法 status 值：`completed` / `failed` / `oom` / `pruned`。多轮写入前用 `python -c "import json; json.load(open('experiment/results.json'))"` 验证 JSON 完整性。**强烈建议每次写入后用 schema 正式校验**：
+
+```bash
+python -c "import json; from jsonschema import validate, FormatChecker; \
+s=json.load(open('references/results.schema.json',encoding='utf-8')); \
+d=json.load(open('experiment/results.json',encoding='utf-8')); \
+validate(d, s, format_checker=FormatChecker()); print('results.json OK')"
+```
+
+**OOM 重试时的字段写法**（同一 config_id 多次执行，靠 attempt 区分）：
+
+```json
+{
+  "config_id": "config-003",
+  "params": {"learning_rate": 0.001, "batch_size": 32},
+  "metrics": {},
+  "status": "oom",
+  "duration_min": 5,
+  "gpu_memory_gb": 23.5,
+  "seed": 44,
+  "commit_hash": "a1b2c3d",
+  "error_type": "OOM",
+  "attempt": 1,
+  "retry_of": null
+},
+{
+  "config_id": "config-003",
+  "params": {"learning_rate": 0.001, "batch_size": 16},
+  "metrics": {"dice": 0.84},
+  "status": "completed",
+  "duration_min": 45,
+  "gpu_memory_gb": 11.8,
+  "seed": 44,
+  "commit_hash": "a1b2c3d",
+  "error_type": null,
+  "attempt": 2,
+  "retry_of": "config-003"
+}
+```
 
 参考示例见 `examples/results.example.json`。
 
@@ -573,7 +724,9 @@ Step 2 专属补充：
         "gpu_memory_gb": 6.2,
         "seed": 42,
         "commit_hash": null,
-        "error_type": null
+        "error_type": null,
+        "attempt": 1,
+        "retry_of": null
       }
     ],
     "best_config_id": "config-001",

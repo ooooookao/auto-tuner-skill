@@ -1,89 +1,131 @@
 {
-  "schema_version": 1,
-  "description": "Auto-Tuner Skill — 状态机与文件契约回归测试",
+  "schema_version": 2,
+  "description": "Auto-Tuner Skill — 状态机与文件契约回归测试。每个 scenario 引用 fixture 与 run_evals.py 中的断言集合。",
+  "runner": "python evals/run_evals.py",
   "scenarios": [
     {
       "id": "classification-success",
       "description": "正常调参全流程: planning → coarse → fine → target_reached → report → completed",
       "priority": 1,
-      "target": [
-        "state_machine",
-        "schema",
-        "termination",
-        "search_stage"
+      "target": ["state_machine", "schema", "termination", "search_stage"],
+      "fixture": {
+        "state": "fixtures/states/tuning-coarse.json"
+      },
+      "runner": "evals/run_evals.py::case_classification_success",
+      "assertions": [
+        {"target": "state", "jsonpath": "phase", "expected": "completed"},
+        {"target": "state", "jsonpath": "next_action", "expected": "completed"},
+        {"target": "state", "jsonpath": "stop_reason", "expected": "target_reached"},
+        {"target": "state", "jsonpath": "architecture_version", "expected": 1}
       ]
     },
     {
       "id": "segmentation-architecture-fallback",
       "description": "架构回溯: 连续 10 轮无提升 → architecture_version+1 → round 归零",
       "priority": 1,
-      "target": [
-        "state_machine",
-        "architecture_version",
-        "round_reset"
+      "target": ["state_machine", "architecture_version", "round_reset"],
+      "fixture": {
+        "state": "fixtures/states/tuning-coarse.json"
+      },
+      "runner": "evals/run_evals.py::case_segmentation_architecture_fallback",
+      "assertions": [
+        {"target": "state", "jsonpath": "next_action", "expected": "architecture_search"},
+        {"target": "state", "jsonpath": "phase", "expected": "optimization"},
+        {"target": "state", "jsonpath": "architecture_version", "expected": 2},
+        {"target": "state", "jsonpath": "round", "expected": 0}
       ]
     },
     {
       "id": "sklearn-lightweight",
       "description": "轻量实验: 无 GPU/loss、Bash 并行、results 字段合规",
       "priority": 1,
-      "target": [
-        "schema",
-        "cross_framework"
+      "target": ["schema", "cross_framework"],
+      "fixture": {
+        "results": "fixtures/results/sklearn-lightweight.json"
+      },
+      "runner": "evals/run_evals.py::case_sklearn_lightweight",
+      "assertions": [
+        {"target": "results", "jsonpath": "configs[0].status", "expected": "completed"},
+        {"target": "results", "jsonpath": "configs[0].gpu_memory_gb", "expected": null}
       ]
     },
     {
       "id": "oom-recovery",
       "description": "OOM 恢复: config OOM → batch_size 减半 → 重试, error_type 记录正确",
       "priority": 1,
-      "target": [
-        "schema",
-        "error_type",
-        "retry"
+      "target": ["schema", "error_type", "retry"],
+      "fixture": {
+        "results": "fixtures/results/oom-recovery.json"
+      },
+      "runner": "evals/run_evals.py::case_oom_recovery",
+      "assertions": [
+        {"target": "results", "jsonpath": "configs[0].status", "expected": "oom"},
+        {"target": "results", "jsonpath": "configs[0].error_type", "expected": "OOM"},
+        {"target": "results", "jsonpath": "configs[1].attempt", "expected": 2},
+        {"target": "results", "jsonpath": "configs[1].retry_of", "expected": "config-001"}
       ]
     },
     {
       "id": "early-target-reached",
       "description": "达标即停: Round 1 达标 → 直接 report, round 不递增",
       "priority": 1,
-      "target": [
-        "state_machine",
-        "termination",
-        "early_stop"
+      "target": ["state_machine", "termination", "early_stop"],
+      "fixture": {
+        "state": "fixtures/states/completed.json"
+      },
+      "runner": "evals/run_evals.py::case_early_target_reached",
+      "assertions": [
+        {"target": "state", "jsonpath": "phase", "expected": "completed"},
+        {"target": "state", "jsonpath": "stop_reason", "expected": "target_reached"},
+        {"target": "state", "jsonpath": "round", "expected": 1}
       ]
     },
     {
       "id": "no-auto-relax-target",
       "description": "禁止自动放宽目标: 3 次熔断后 target_expr 不变",
       "priority": 1,
-      "target": [
-        "quality_meltdown",
-        "conservative"
+      "target": ["quality_meltdown", "conservative"],
+      "fixture": {
+        "state": "fixtures/states/stopped.json"
+      },
+      "runner": "evals/run_evals.py::case_no_auto_relax_target",
+      "assertions": [
+        {"target": "state", "jsonpath": "phase", "expected": "stopped"},
+        {"target": "state", "jsonpath": "stop_reason", "expected": "quality_meltdown"},
+        {"target": "state", "jsonpath": "target_conditions[0].value", "expected": 0.90}
       ]
     },
     {
       "id": "stagnation-continuous-improvement",
       "description": "回归测试: 15 轮持续提升不触发 stagnated（防 round_num 误判）",
       "priority": 1,
-      "target": [
-        "state_machine",
-        "termination",
-        "regression"
+      "target": ["state_machine", "termination", "regression"],
+      "fixture": {
+        "state": "fixtures/states/tuning-coarse.json"
+      },
+      "runner": "evals/run_evals.py::case_stagnation_continuous_improvement",
+      "assertions": [
+        {"target": "state", "jsonpath": "stop_reason", "expected": null},
+        {"target": "state", "jsonpath": "consecutive_no_improvement", "expected": 0}
       ]
     },
     {
       "id": "loss-continuous-improvement",
       "description": "回归测试：<= 指标持续下降应视为持续改善，不触发架构回溯或停滞",
       "priority": 1,
-      "target": [
-        "state_machine",
-        "metric_direction",
-        "termination",
-        "regression"
+      "target": ["state_machine", "metric_direction", "termination", "regression"],
+      "fixture": {
+        "state": "fixtures/states/tuning-coarse.json"
+      },
+      "runner": "evals/run_evals.py::case_loss_continuous_improvement",
+      "assertions": [
+        {"target": "state", "jsonpath": "consecutive_no_improvement", "expected": 0},
+        {"target": "state", "jsonpath": "next_action", "expected": "generate_configs"},
+        {"target": "state", "jsonpath": "phase", "expected": "tuning"}
       ]
     }
   ],
-  "last_run": "2026-06-30T00:30:00Z",
+  "last_run": "2026-07-02T12:00:00Z",
   "last_result": {
     "passed": 148,
     "skipped": 0,

@@ -6,11 +6,13 @@
   "best_config_id": "config-120",
   "best_metrics": {"dice": 0.79},
   "target_expr": "dice >= 0.90",
+  "target_conditions": [{"metric": "dice", "operator": ">=", "value": 0.90}],
   "last_action": "generate_report",
   "next_action": "stopped",
   "stop_reason": "too_many_rounds",
   "retry_count": 3,
   "consecutive_no_improvement": 15,
   "last_round_best_metric": 0.79,
-  "last_updated": "2026-06-29T18:00:00Z"
+  "last_updated": "2026-06-29T18:00:00Z",
+  "autonomy_mode": "full"
 }

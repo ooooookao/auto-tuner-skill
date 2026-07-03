@@ -400,6 +400,7 @@ def case_classification_success():
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 0, "last_round_best_metric": None,
         "last_updated": "2026-06-29T00:00:00Z",
+        "autonomy_mode": "full",
     }
 
     rounds = [
@@ -455,6 +456,7 @@ def case_segmentation_architecture_fallback():
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 10, "last_round_best_metric": 0.83,
         "last_updated": "2026-06-29T12:00:00Z",
+        "autonomy_mode": "full",
     }
 
     # check_termination is pure — original state unchanged
@@ -660,6 +662,7 @@ def case_early_target_reached():
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 0, "last_round_best_metric": 0.915,
         "last_updated": "2026-06-29T12:00:00Z",
+        "autonomy_mode": "full",
     }
 
     # check_termination is pure
@@ -710,6 +713,7 @@ def case_no_auto_relax_target():
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 3, "last_round_best_metric": 0.83,
         "last_updated": "2026-06-29T14:00:00Z",
+        "autonomy_mode": "full",
     }
 
     original_expr = state["target_expr"]
@@ -790,6 +794,7 @@ def case_stagnation_continuous_improvement():
         "stop_reason": None, "retry_count": 0,
         "consecutive_no_improvement": 0, "last_round_best_metric": None,
         "last_updated": "2026-06-29T00:00:00Z",
+        "autonomy_mode": "full",
     }
 
     s = state
@@ -851,6 +856,7 @@ def case_loss_continuous_improvement():
         "consecutive_no_improvement": 0,
         "last_round_best_metric": None,
         "last_updated": "2026-06-29T00:00:00Z",
+        "autonomy_mode": "full",
     }
 
     original_state = deepcopy(state)

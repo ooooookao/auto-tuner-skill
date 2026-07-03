@@ -97,6 +97,39 @@
 
 ---
 
+### G. 医学 3D/4D 影像 Profile
+
+针对 **3D/4D 医学影像（如 4D 心脏 CT、MR 运动重建、去伪影）** 的专项分析，在基础分析之外增加：
+
+| 检查项 | 方法 | 输出 | 调参影响 |
+|--------|------|------|----------|
+| 患者级划分 | 检查 train/val/test 是否按患者 ID 划分，不同 phase 不跨 split | 泄漏样本数 | 防止同一患者不同 phase 泄漏，需按患者分组 |
+| 体数据维度 | 读取 shape，确认 T×D×H×W 或 D×H×W | 维度统计、异常 shape 列表 | 决定 2D/2.5D/3D 网络、patch 大小 |
+| Spacing / 方向矩阵 | 读取头信息（如 NIfTI/SimpleITK） | spacing 分布、方向一致性 | 是否需要重采样、各向异性处理 |
+| HU / 强度范围 | 统计 HU 或强度 min/max/percentile | 窗宽窗位建议 | 归一化方式、clip 范围 |
+| 心动 phase 分布 | 统计每个患者 phase 数量与缺失 | phase 数量分布 | 时间一致性 loss、序列模型 |
+| 配准/运动场质量 | 检查 motion field 是否异常、是否有 identity 偏移 | 异常 field 数量 | 运动估计网络设计 |
+| 伪影强度分层 | 按伪影严重程度分层统计 | 轻/中/重分布 | 采样策略、加权 loss |
+| 配对数据对应 | 确认输入与目标严格对应（同一患者、同一 phase） | 不匹配列表 | 数据 loader 必须保证配对 |
+| 时间一致性 | 计算相邻 phase 的像素/结构相似性 | 帧间差异分布 | 增加 temporal consistency loss |
+| Patch overlap 与边界伪影 | 检查 inference 时 patch 拼接是否有边界效应 | 边界强度统计 | overlap、blend 策略 |
+| 推理资源 | 估算整卷推理显存与时间 | GB / s | 是否需要 patch-based inference、模型轻量化 |
+
+**推荐指标**（重建/去伪影任务）：
+- 像素级：MAE、MSE、PSNR
+- 结构级：SSIM、MS-SSIM
+- 时间级：相邻 phase PSNR/SSIM、光流一致性
+- 单患者多 phase 聚合：患者级均值/最差 phase 指标
+
+**调参建议规则**：
+- 患者级泄漏 > 0 → 必须重新划分数据，否则指标不可信。
+- spacing 各向异性 > 2:1 → 优先重采样到各向同性或设计各向异性卷积。
+- phase 数量不一致 → 使用可处理变长序列的模型，或插值到固定 phase。
+- 伪影分布极不平衡 → 分层采样 + 加权 loss。
+- 整卷推理显存不足 → 必须 patch-based inference + overlap，训练时也使用相同 patch 策略。
+
+---
+
 ## 可视化
 
 **前提**：检查 `python -c "import matplotlib"` 是否成功。失败则跳过可视化，用纯文字/表格替代。
@@ -171,6 +204,9 @@ def plot_pca(features_2d, labels, save_path):
 
 ## 数据可分性
 [KNN 准确率 + PCA 散点图引用]
+
+## 医学 3D/4D 影像分析（如适用）
+[患者级划分 / spacing / phase / 伪影 / 时间一致性 / 推理资源]
 
 ## 调参建议
 1. [建议1]
